@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HD Map — osm2streets + MapLibre</title>
+    <link
+      href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css"
+      rel="stylesheet"
+    />
+    <style>
+      html, body { margin: 0; height: 100%; background: #0f1115; }
+      #map { position: absolute; inset: 0; }
+      #panel {
+        position: absolute; top: 12px; left: 12px; z-index: 2;
+        background: rgba(20,22,28,.9); color: #e6e9ef; padding: 12px 14px;
+        border-radius: 10px; font: 13px/1.4 system-ui, sans-serif;
+        box-shadow: 0 4px 16px rgba(0,0,0,.4); min-width: 190px;
+      }
+      #panel h1 { font-size: 14px; margin: 0 0 8px; font-weight: 600; }
+      #panel label { display: flex; align-items: center; gap: 7px; margin: 4px 0; cursor: pointer; }
+      #panel .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+      #panel .hint { opacity: .6; font-size: 11px; margin-top: 8px; }
+      .maplibregl-popup-content {
+        background:#1a1d24; color:#e6e9ef; font:12px/1.4 system-ui,sans-serif;
+        border-radius:8px; padding:10px 12px;
+      }
+      .maplibregl-popup-content b { color:#7fd1ff; }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <div id="panel">
+      <h1>HD road network</h1>
+      <label><input type="checkbox" id="t-lanes" checked /><span class="sw" style="background:#5b6270"></span> Lanes</label>
+      <label><input type="checkbox" id="t-inter" checked /><span class="sw" style="background:#3a3f4b"></span> Intersections</label>
+      <label><input type="checkbox" id="t-mark" checked /><span class="sw" style="background:#ffffff"></span> Markings</label>
+      <div class="hint">Click a lane for its OSM tags. Data: osm2streets from OSM.</div>
+    </div>
+
+    <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+    <script>
+      async function main() {
+        const meta = await fetch("data/meta.json").then((r) => r.json());
+        const lanesGeojson = await fetch("data/lanes.geojson").then((r) => r.json());
+
+        // real bounds of the road geometry (querySourceFeatures only sees the
+        // viewport, so compute from the raw GeoJSON instead)
+        let dataBounds = null;
+        const walk = (c) => {
+          if (typeof c[0] === "number")
+            dataBounds = dataBounds
+              ? dataBounds.extend(c)
+              : new maplibregl.LngLatBounds(c, c);
+          else c.forEach(walk);
+        };
+        lanesGeojson.features.forEach((f) => walk(f.geometry.coordinates));
+
+        // a point guaranteed to sit on a real road (first vertex of a driving
+        // lane) — the geometric centroid can land in an empty block interior
+        const firstCoord = (g) =>
+          (Array.isArray(g[0]) ? firstCoord(g[0]) : g);
+        const drive =
+          lanesGeojson.features.find((f) => f.properties.type === "Driving") ||
+          lanesGeojson.features[0];
+        const roadCenter = firstCoord(drive.geometry.coordinates);
+
+        const map = new maplibregl.Map({
+          container: "map",
+          center: roadCenter,
+          zoom: 18,
+          style: {
+            version: 8,
+            glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+            sources: {
+              lanes: { type: "geojson", data: lanesGeojson },
+              intersections: { type: "geojson", data: "data/intersections.geojson" },
+              markings: { type: "geojson", data: "data/markings.geojson" },
+            },
+            layers: [
+              { id: "bg", type: "background", paint: { "background-color": "#0f1115" } },
+
+              // intersections sit under the lanes
+              {
+                id: "intersections",
+                type: "fill",
+                source: "intersections",
+                // paved junction area — a touch darker than driving lanes so
+                // junctions read as continuous pavement, not black gaps
+                paint: { "fill-color": "#4a505c", "fill-outline-color": "#5b6270" },
+              },
+
+              // lane polygons, coloured by type
+              {
+                id: "lanes",
+                type: "fill",
+                source: "lanes",
+                paint: {
+                  "fill-color": [
+                    "match", ["get", "type"],
+                    "Driving", "#5b6270",
+                    "Parking", "#494f5b",
+                    "Sidewalk", "#8a90a0",
+                    "Footway", "#8a90a0",
+                    "Shoulder", "#40454f",
+                    "Biking", "#2f6b4f",
+                    "Bus", "#6b3a3a",
+                    "SharedLeftTurn", "#6b5f3a",
+                    "LightRail", "#5a4a6b",
+                    /* other */ "#565c68",
+                  ],
+                  "fill-opacity": 0.95,
+                },
+              },
+              // thin casing on lane edges for definition
+              {
+                id: "lanes-outline",
+                type: "line",
+                source: "lanes",
+                paint: { "line-color": "#2b2f38", "line-width": 0.5 },
+              },
+
+              // markings: white by default, yellow for centre lines
+              {
+                id: "markings",
+                type: "fill",
+                source: "markings",
+                paint: {
+                  "fill-color": [
+                    "match", ["get", "type"],
+                    "center line", "#e8c84a",
+                    "vehicle stop line", "#ffffff",
+                    "lane arrow", "#d7dbe3",
+                    "lane separator", "#c9cdd6",
+                    "sidewalk corner", "#8a90a0",
+                    /* other */ "#ffffff",
+                  ],
+                  "fill-opacity": 0.9,
+                },
+              },
+            ],
+          },
+        });
+
+        map.addControl(new maplibregl.NavigationControl(), "top-right");
+        map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
+        window._m = map;
+        window._dataBounds = dataBounds; // press "f" to frame the whole network
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "f" && dataBounds)
+            map.fitBounds(dataBounds, { padding: 40, maxZoom: 18 });
+        });
+
+        // layer toggles
+        const bind = (id, ...layers) => {
+          document.getElementById(id).addEventListener("change", (e) => {
+            const v = e.target.checked ? "visible" : "none";
+            layers.forEach((l) => map.getLayer(l) && map.setLayoutProperty(l, "visibility", v));
+          });
+        };
+        map.on("load", () => {
+          bind("t-lanes", "lanes", "lanes-outline");
+          bind("t-inter", "intersections");
+          bind("t-mark", "markings");
+        });
+
+        // click a lane -> show its properties + OSM way id
+        map.on("click", "lanes", (e) => {
+          const p = e.features[0].properties;
+          let ways = p.osm_way_ids || "";
+          try { ways = JSON.parse(ways).join(", "); } catch (_) {}
+          new maplibregl.Popup()
+            .setLngLat(e.lngLat)
+            .setHTML(
+              `<b>${p.type}</b> lane<br/>direction: ${p.direction}<br/>` +
+                `width: ${Number(p.width).toFixed(1)} m<br/>` +
+                `speed: ${p.speed_limit}<br/>` +
+                (ways ? `OSM way: ${ways}` : "")
+            )
+            .addTo(map);
+        });
+        map.on("mouseenter", "lanes", () => (map.getCanvas().style.cursor = "pointer"));
+        map.on("mouseleave", "lanes", () => (map.getCanvas().style.cursor = ""));
+      }
+      main();
+    </script>
+  </body>
+</html>
