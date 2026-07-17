@@ -1,188 +1,1763 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>HD Map — osm2streets + MapLibre</title>
-    <link
-      href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css"
-      rel="stylesheet"
-    />
-    <style>
-      html, body { margin: 0; height: 100%; background: #0f1115; }
-      #map { position: absolute; inset: 0; }
-      #panel {
-        position: absolute; top: 12px; left: 12px; z-index: 2;
-        background: rgba(20,22,28,.9); color: #e6e9ef; padding: 12px 14px;
-        border-radius: 10px; font: 13px/1.4 system-ui, sans-serif;
-        box-shadow: 0 4px 16px rgba(0,0,0,.4); min-width: 190px;
-      }
-      #panel h1 { font-size: 14px; margin: 0 0 8px; font-weight: 600; }
-      #panel label { display: flex; align-items: center; gap: 7px; margin: 4px 0; cursor: pointer; }
-      #panel .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
-      #panel .hint { opacity: .6; font-size: 11px; margin-top: 8px; }
-      .maplibregl-popup-content {
-        background:#1a1d24; color:#e6e9ef; font:12px/1.4 system-ui,sans-serif;
-        border-radius:8px; padding:10px 12px;
-      }
-      .maplibregl-popup-content b { color:#7fd1ff; }
-    </style>
-  </head>
-  <body>
-    <div id="map"></div>
-    <div id="panel">
-      <h1>HD road network</h1>
-      <label><input type="checkbox" id="t-lanes" checked /><span class="sw" style="background:#5b6270"></span> Lanes</label>
-      <label><input type="checkbox" id="t-inter" checked /><span class="sw" style="background:#3a3f4b"></span> Intersections</label>
-      <label><input type="checkbox" id="t-mark" checked /><span class="sw" style="background:#ffffff"></span> Markings</label>
-      <div class="hint">Click a lane for its OSM tags. Data: osm2streets from OSM.</div>
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HD Map — osm2streets + MapLibre</title>
+  <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet" />
+  <style>
+    html,
+    body {
+      margin: 0;
+      height: 100%;
+      background: #e7ecdb;
+    }
+
+    #map {
+      position: absolute;
+      inset: 0;
+    }
+
+    #panel {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 2;
+      background: rgba(20, 22, 28, .9);
+      color: #e6e9ef;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font: 13px/1.4 system-ui, sans-serif;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
+      min-width: 190px;
+    }
+
+    #panel h1 {
+      font-size: 14px;
+      margin: 0 0 8px;
+      font-weight: 600;
+    }
+
+    #panel label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin: 4px 0;
+      cursor: pointer;
+    }
+
+    #panel .sw {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      display: inline-block;
+    }
+
+    #panel .hint {
+      opacity: .6;
+      font-size: 11px;
+      margin-top: 8px;
+    }
+
+    #goto {
+      display: flex;
+      gap: 6px;
+      margin: 2px 0 6px;
+    }
+
+    #goto input {
+      flex: 1;
+      min-width: 0;
+      background: #10131a;
+      border: 1px solid #333a46;
+      color: #e6e9ef;
+      border-radius: 6px;
+      padding: 6px 8px;
+      font: 12px system-ui, sans-serif;
+    }
+
+    #goto button {
+      border: none;
+      border-radius: 6px;
+      padding: 0 12px;
+      background: #2f6bd6;
+      color: #fff;
+      font: 600 12px system-ui, sans-serif;
+      cursor: pointer;
+    }
+
+    #goto-status {
+      font-size: 11px;
+      color: #f5a3a3;
+      min-height: 0;
+      margin: -2px 0 4px;
+    }
+
+    .maplibregl-popup-content {
+      background: #1a1d24;
+      color: #e6e9ef;
+      font: 12px/1.4 system-ui, sans-serif;
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+
+    .maplibregl-popup-content b {
+      color: #7fd1ff;
+    }
+
+    #editor {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 3;
+      width: 300px;
+      background: rgba(20, 22, 28, .96);
+      color: #e6e9ef;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font: 13px/1.4 system-ui, sans-serif;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, .5);
+      display: none;
+    }
+
+    #editor h2 {
+      font-size: 13px;
+      margin: 0 0 2px;
+      font-weight: 600;
+    }
+
+    #editor .wid {
+      font-size: 11px;
+      opacity: .65;
+      margin-bottom: 8px;
+    }
+
+    #editor .wid a {
+      color: #7fd1ff;
+    }
+
+    #editor .row {
+      display: flex;
+      gap: 5px;
+      margin: 4px 0;
+    }
+
+    #editor input {
+      background: #10131a;
+      border: 1px solid #333a46;
+      color: #e6e9ef;
+      border-radius: 5px;
+      padding: 4px 6px;
+      font: 12px monospace;
+      min-width: 0;
+    }
+
+    #editor input.k {
+      flex: 1 1 44%;
+    }
+
+    #editor input.v {
+      flex: 1 1 44%;
+    }
+
+    #editor .del {
+      flex: 0 0 auto;
+      background: #2a2f3a;
+      border: none;
+      color: #b9c0cc;
+      border-radius: 5px;
+      cursor: pointer;
+      padding: 0 8px;
+    }
+
+    #editor .quick {
+      margin: 8px 0 4px;
+      font-size: 11px;
+      opacity: .7;
+    }
+
+    #editor .quick button {
+      background: #232833;
+      border: 1px solid #333a46;
+      color: #c9cfda;
+      border-radius: 12px;
+      padding: 2px 8px;
+      margin: 2px 3px 0 0;
+      cursor: pointer;
+      font-size: 11px;
+    }
+
+    #editor .addrow {
+      margin: 6px 0 2px;
+      background: #1c2431;
+      border: 1px dashed #3a4657;
+      color: #9db4d6;
+      border-radius: 6px;
+      padding: 5px 8px;
+      cursor: pointer;
+      font-size: 11px;
+      width: 100%;
+      text-align: center;
+    }
+
+    #editor .addrow:hover {
+      background: #22303f;
+      color: #cfe0ff;
+    }
+
+    #editor .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    #editor .actions button {
+      flex: 1;
+      border: none;
+      border-radius: 6px;
+      padding: 7px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    #ed-apply {
+      background: #3ddc84;
+      color: #06210f;
+    }
+
+    #ed-cancel {
+      background: #2a2f3a;
+      color: #c9cfda;
+    }
+
+    #ed-split {
+      width: 100%;
+      margin-top: 8px;
+      border: 1px solid #3a4657;
+      background: #1c2431;
+      color: #cfe0ff;
+      border-radius: 6px;
+      padding: 7px;
+      cursor: pointer;
+      font: 600 12px system-ui, sans-serif;
+    }
+
+    #ed-split:hover {
+      background: #24303f;
+    }
+
+    #ed-status {
+      font-size: 11px;
+      opacity: .8;
+      margin-top: 8px;
+      min-height: 14px;
+    }
+
+    #ed-warn {
+      margin-top: 8px;
+      display: none;
+    }
+
+    #ed-warn .w {
+      background: #3a2f14;
+      border: 1px solid #6b5320;
+      color: #f0cf7a;
+      border-radius: 6px;
+      padding: 5px 8px;
+      font-size: 11px;
+      margin-top: 4px;
+    }
+
+    #tools {
+      margin-top: 10px;
+      border-top: 1px solid #2a2f3a;
+      padding-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    #tools button {
+      border: none;
+      border-radius: 6px;
+      padding: 7px 9px;
+      cursor: pointer;
+      font: 600 12px system-ui, sans-serif;
+      text-align: left;
+    }
+
+    #btn-fetch {
+      background: #26303f;
+      color: #cfe0ff;
+    }
+
+    #btn-submit {
+      background: #3a3f4b;
+      color: #7c8496;
+      cursor: default;
+    }
+
+    #btn-submit.ready {
+      background: #d94ff2;
+      color: #2a0733;
+      cursor: pointer;
+    }
+
+    #tool-status {
+      font-size: 11px;
+      opacity: .8;
+      min-height: 14px;
+    }
+
+    #tool-status a {
+      color: #7fd1ff;
+    }
+
+    #data-age.stale {
+      color: #f0cf7a;
+      opacity: 1;
+    }
+
+    #staged-list {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    #staged-list .item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      background: #241a2b;
+      border: 1px solid #4a2f52;
+      border-radius: 5px;
+      padding: 3px 6px;
+    }
+
+    #staged-list .item .lbl {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #e6c7ef;
+    }
+
+    #staged-list .item .rm {
+      flex: 0 0 auto;
+      background: none;
+      border: none;
+      color: #d98fe8;
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      padding: 0 2px;
+    }
+
+    #staged-list .item .rm:hover {
+      color: #f5b8ff;
+    }
+
+    #btn-reset {
+      background: #2a2620;
+      color: #e8d3b0;
+    }
+
+    #btn-reset:hover {
+      background: #342e24;
+    }
+
+    #btn-reload {
+      background: #20302a;
+      color: #bfe0cc;
+    }
+
+    #btn-reload:hover {
+      background: #283c34;
+    }
+
+    /* --- visual lane editor (roadmap #6) --- */
+    #ed-lanes {
+      margin: 6px 0 8px;
+      display: none;
+    }
+
+    .lanes-hd {
+      width: 100%;
+      text-align: left;
+      background: #1c2431;
+      border: 1px solid #2a3444;
+      color: #cfe0ff;
+      border-radius: 6px;
+      padding: 6px 8px;
+      cursor: pointer;
+      font: 600 12px system-ui, sans-serif;
+    }
+
+    .lanes-hd:hover {
+      background: #24303f;
+    }
+
+    #ed-lanes-body {
+      border: 1px solid #2a3444;
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+      padding: 8px;
+      background: #141a22;
+    }
+
+    #ed-lanes-body .ow {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin: 0 0 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .lgroup {
+      margin: 6px 0;
+    }
+
+    .lg-hd {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      opacity: .8;
+      margin-bottom: 4px;
+    }
+
+    .lg-hd .lg-btns {
+      display: flex;
+      gap: 4px;
+    }
+
+    .lg-hd button {
+      background: #232833;
+      border: 1px solid #333a46;
+      color: #c9cfda;
+      border-radius: 4px;
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      padding: 0;
+    }
+
+    .lg-hd button:hover {
+      background: #2c333f;
+    }
+
+    .strip {
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      min-height: 50px;
+    }
+
+    .strip:empty::after {
+      content: "no lanes";
+      opacity: .4;
+      font-size: 11px;
+    }
+
+    .lane {
+      flex: 0 0 auto;
+      width: 38px;
+      background: #0f1620;
+      border: 1px solid #2a3444;
+      border-radius: 5px;
+      cursor: pointer;
+      padding: 3px 0;
+      text-align: center;
+    }
+
+    .lane:hover {
+      border-color: #3aa0ff;
+      background: #12202e;
+    }
+
+    .lane svg {
+      display: block;
+      margin: 0 auto;
+    }
+
+    .lanes-hint {
+      font-size: 10px;
+      opacity: .6;
+      margin-top: 7px;
+      line-height: 1.5;
+    }
+
+    .linkish {
+      background: none;
+      border: none;
+      color: #7fd1ff;
+      cursor: pointer;
+      font-size: 10px;
+      padding: 0;
+      text-decoration: underline;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+  <div id="panel">
+    <h1>HD road network</h1>
+    <div id="goto">
+      <input id="goto-input" type="text" placeholder="lat, lng — e.g. 21.036860, 105.780890" />
+      <button id="goto-btn">Go</button>
     </div>
+    <div id="goto-status"></div>
+    <label><input type="checkbox" id="t-lanes" checked /><span class="sw" style="background:#5b6270"></span>
+      Lanes</label>
+    <label><input type="checkbox" id="t-inter" checked /><span class="sw" style="background:#3a3f4b"></span>
+      Intersections</label>
+    <label><input type="checkbox" id="t-mark" checked /><span class="sw" style="background:#ffffff"></span>
+      Markings</label>
+    <label><input type="checkbox" id="t-turn" checked /><span class="sw" style="background:#2ea6a6"></span> Turn lanes
+      <span style="opacity:.6">(teal=left, <span style="color:#c9772e">orange=right</span>)</span></label>
+    <label><input type="checkbox" id="t-sat" /><span class="sw" style="background:#3b6ea5"></span> Satellite
+      imagery</label>
+    <label style="opacity:.85">HD opacity
+      <input type="range" id="hd-op" min="0" max="100" value="100" style="flex:1;min-width:0" />
+    </label>
+    <div class="hint">Click a lane (or an intersection) for its OSM tags. Data: osm2streets from OSM.</div>
+    <div id="live" class="hint" style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+      <span id="live-dot"
+        style="width:8px;height:8px;border-radius:50%;background:#6b7280;display:inline-block;"></span>
+      <span id="live-text">live sync: off</span>
+    </div>
+    <div id="tools">
+      <button id="btn-fetch">⤓ Fetch OSM data (this view)</button>
+      <button id="btn-reset">⌂ Reset to default area</button>
+      <button id="btn-reload">↻ Reload local file (after JOSM save)</button>
+      <button id="btn-uploaded">✓ Mark uploaded (clear modify flags)</button>
+      <div id="data-age" class="hint" style="margin-top:0"></div>
+      <button id="btn-submit">Submit changeset (0)</button>
+      <div id="staged-list"></div>
+      <div id="tool-status"></div>
+    </div>
+  </div>
 
-    <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
-    <script>
-      async function main() {
-        const meta = await fetch("data/meta.json").then((r) => r.json());
-        const lanesGeojson = await fetch("data/lanes.geojson").then((r) => r.json());
+  <div id="editor">
+    <h2 id="ed-title">Edit lane tags</h2>
+    <div class="wid"><span id="ed-kind">way</span> <span id="ed-id"></span> · <a id="ed-osm" target="_blank"
+        rel="noopener">osm.org ↗</a></div>
+    <div id="ed-lanes">
+      <button type="button" id="ed-lanes-toggle" class="lanes-hd">▸ Visual lane editor</button>
+      <div id="ed-lanes-body" style="display:none">
+        <label class="ow"><input type="checkbox" id="lane-oneway" /> one-way</label>
+        <div class="lgroup" id="lg-forward">
+          <div class="lg-hd"><span>▲ forward</span>
+            <span class="lg-btns"><button type="button" class="lg-minus" data-dir="forward"
+                title="remove lane">−</button><button type="button" class="lg-plus" data-dir="forward"
+                title="add lane">+</button></span>
+          </div>
+          <div class="strip" id="strip-forward"></div>
+        </div>
+        <div class="lgroup" id="lg-backward">
+          <div class="lg-hd"><span>▼ backward</span>
+            <span class="lg-btns"><button type="button" class="lg-minus" data-dir="backward"
+                title="remove lane">−</button><button type="button" class="lg-plus" data-dir="backward"
+                title="add lane">+</button></span>
+          </div>
+          <div class="strip" id="strip-backward"></div>
+        </div>
+        <div class="lanes-hint">click a lane to cycle turns · shift-click reverses ·
+          <button type="button" id="lane-from-tags" class="linkish">⟲ rebuild from tags</button>
+        </div>
+      </div>
+    </div>
+    <div id="ed-rows"></div>
+    <button type="button" id="ed-addrow" class="addrow">+ add tag (any key)</button>
+    <div id="ed-warn"></div>
+    <div class="quick">quick add:
+      <span id="ed-quick"></span>
+    </div>
+    <div class="actions">
+      <button id="ed-apply">Stage edit</button>
+      <button id="ed-cancel">Close</button>
+    </div>
+    <button id="ed-split">✂ Split this way in JOSM</button>
+    <div id="ed-status"></div>
+  </div>
 
-        // real bounds of the road geometry (querySourceFeatures only sees the
-        // viewport, so compute from the raw GeoJSON instead)
-        let dataBounds = null;
-        const walk = (c) => {
-          if (typeof c[0] === "number")
-            dataBounds = dataBounds
-              ? dataBounds.extend(c)
-              : new maplibregl.LngLatBounds(c, c);
-          else c.forEach(walk);
-        };
-        lanesGeojson.features.forEach((f) => walk(f.geometry.coordinates));
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+  <script>
+    async function main() {
+      const meta = await fetch("data/meta.json").then((r) => r.json());
+      const lanesGeojson = await fetch("data/lanes.geojson").then((r) => r.json());
+      const turnArrowsGeojson = await fetch("data/turn_arrows.geojson")
+        .then((r) => r.json()).catch(() => ({ type: "FeatureCollection", features: [] }));
+      const intersectionsGeojson = await fetch("data/intersections.geojson")
+        .then((r) => r.json()).catch(() => ({ type: "FeatureCollection", features: [] }));
+      let currentLanes = lanesGeojson; // latest lane features (updated on live reload)
+      let currentIntersections = intersectionsGeojson; // kept for node (intersection) editing
 
-        // a point guaranteed to sit on a real road (first vertex of a driving
-        // lane) — the geometric centroid can land in an empty block interior
-        const firstCoord = (g) =>
-          (Array.isArray(g[0]) ? firstCoord(g[0]) : g);
-        const drive =
-          lanesGeojson.features.find((f) => f.properties.type === "Driving") ||
-          lanesGeojson.features[0];
-        const roadCenter = firstCoord(drive.geometry.coordinates);
+      // deterministic startup (roadmap #7): boot to a FIXED area/view (the Pham
+      // Hung interchange, Hanoi) instead of a value derived from whatever data
+      // happens to be loaded. The committed default seed (data/default.osm) is
+      // this same area, so a fresh checkout always opens here without any live
+      // Overpass call. Press "f" or use Reset/Fetch to go elsewhere.
+      const DEFAULT_CENTER = [105.780890, 21.036860];
+      const DEFAULT_ZOOM = 16.5;
 
-        const map = new maplibregl.Map({
-          container: "map",
-          center: roadCenter,
-          zoom: 18,
-          style: {
-            version: 8,
-            glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
-            sources: {
-              lanes: { type: "geojson", data: lanesGeojson },
-              intersections: { type: "geojson", data: "data/intersections.geojson" },
-              markings: { type: "geojson", data: "data/markings.geojson" },
+      // real bounds of the road geometry (querySourceFeatures only sees the
+      // viewport, so compute from the raw GeoJSON instead)
+      let dataBounds = null;
+      const walk = (c) => {
+        if (typeof c[0] === "number")
+          dataBounds = dataBounds
+            ? dataBounds.extend(c)
+            : new maplibregl.LngLatBounds(c, c);
+        else c.forEach(walk);
+      };
+      lanesGeojson.features.forEach((f) => walk(f.geometry.coordinates));
+
+      // ---- layer stacking by OSM `layer` tag (default 0) ----
+      // Draw everything at layer<1 first, then layer>=1 on top, so a bridge /
+      // overpass fully covers the road (and its markings) beneath it.
+      const LYR = ["coalesce", ["get", "layer"], 0];
+      const sortKey = ["coalesce", ["get", "layer"], 0]; // fine-order within a band
+      const laneColor = [
+        "match", ["get", "type"],
+        "Driving", "#5b6270", "Parking", "#494f5b", "Sidewalk", "#8a90a0",
+        "Footway", "#8a90a0", "Shoulder", "#40454f", "Biking", "#2f6b4f",
+        "Bus", "#6b3a3a", "SharedLeftTurn", "#6b5f3a", "LightRail", "#5a4a6b",
+        "#565c68",
+      ];
+      const markColor = [
+        "match", ["get", "type"],
+        "center line", "#e8c84a", "vehicle stop line", "#ffffff",
+        "lane arrow", "#d7dbe3", "lane separator", "#c9cdd6",
+        "sidewalk corner", "#8a90a0", "#ffffff",
+      ];
+      // The band is split into EDGES (casing lines) and FILLS (asphalt + paint)
+      // so the whole style can draw *all* casings first and *all* fills after.
+      // MapLibre centres a line on its polygon boundary, so half of a road's
+      // casing spills OUTSIDE the road polygon; if that casing is drawn after the
+      // neighbouring intersection fill, the spill shows as a dark ghost seam on
+      // the junction. Drawing every casing first, then every asphalt fill, lets
+      // the fills swallow all internal seams (road↔road and road↔intersection),
+      // leaving only the true OUTER perimeter dark — one continuous surface.
+      const bandEdges = (sfx, flt) => [
+        // Dark casing UNDER the fills. Wider for elevated roads (layer>=1) so a
+        // bridge lifts off what's beneath (this folds in the old `edge-hi`).
+        {
+          id: "lanes-edge" + sfx, type: "line", source: "lanes", filter: flt,
+          layout: { "line-sort-key": sortKey, "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-color": "#1a1e25",
+            "line-width": ["interpolate", ["linear"], ["coalesce", ["get", "layer"], 0],
+              0, 1.4, 1, 2.6, 4, 4.2]
+          }
+        },
+      ];
+      const bandFills = (sfx, flt) => [
+        // opaque fill: where two roads' lane polygons overlap (common at forks /
+        // dual carriageways in osm2streets output), the top road cleanly covers
+        // the one beneath instead of blending into a murky darker band. Also fully
+        // hides the internal half of the casing. Use the HD-opacity slider to see
+        // through for tracing.
+        {
+          id: "lanes" + sfx, type: "fill", source: "lanes", filter: flt,
+          layout: { "fill-sort-key": sortKey },
+          paint: { "fill-color": laneColor, "fill-opacity": 1 }
+        },
+        {
+          id: "turn-left" + sfx, type: "fill", source: "lanes",
+          filter: ["all", flt, ["==", ["get", "type"], "Driving"],
+            ["in", "left", ["to-string", ["get", "allowed_turns"]]]],
+          layout: { "fill-sort-key": sortKey },
+          paint: { "fill-color": "#2ea6a6", "fill-opacity": 0.55 }
+        },
+        {
+          id: "turn-right" + sfx, type: "fill", source: "lanes",
+          filter: ["all", flt, ["==", ["get", "type"], "Driving"],
+            ["in", "right", ["to-string", ["get", "allowed_turns"]]]],
+          layout: { "fill-sort-key": sortKey },
+          paint: { "fill-color": "#c9772e", "fill-opacity": 0.55 }
+        },
+        {
+          id: "markings" + sfx, type: "fill", source: "markings", filter: flt,
+          layout: { "fill-sort-key": sortKey },
+          paint: { "fill-color": markColor, "fill-opacity": 0.9 }
+        },
+        {
+          id: "turn-arrows" + sfx, type: "symbol", source: "turn-arrows", filter: flt,
+          minzoom: 15, // arrows are meaningless (and huge) when zoomed far out
+          layout: {
+            "icon-image": ["get", "turns"], "icon-rotate": ["get", "bearing"],
+            "icon-rotation-alignment": "map",
+            // scale with zoom (base-2 → roughly constant ground size) so arrows
+            // stay proportional to the road instead of fixed screen pixels
+            "icon-size": ["interpolate", ["exponential", 2], ["zoom"],
+              15, 0.05, 19, 0.8, 22, 6.4],
+            "icon-allow-overlap": true, "icon-ignore-placement": true,
+            "symbol-sort-key": sortKey,
+          }
+        },
+      ];
+      const styleLayers = [
+        { id: "bg", type: "background", paint: { "background-color": "#e7ecdb" } },
+        // satellite sits above the background but below all HD polygons; hidden
+        // until toggled on. Fade the HD layers (HD opacity slider) to trace.
+        {
+          id: "satellite", type: "raster", source: "sat",
+          layout: { visibility: "none" }, paint: { "raster-opacity": 1 }
+        },
+        // Intersections: real junctions only. osm2streets also emits non-junction
+        // nodes we hide — "Connection" (a road split for a tag change) and
+        // "MapEdge" (data boundary) — which otherwise litter the map with dark
+        // stubs. Fill colour encodes control (signalised junctions stand out) and
+        // de-emphasises dead-end "Terminus" caps.
+        // --- CASINGS (drawn first, under every fill) -----------------------
+        // intersection kerb — matches the road casing (colour + ground width) so
+        // the combined surface has ONE continuous outer casing.
+        {
+          id: "inter-edge", type: "line", source: "intersections",
+          filter: ["!", ["in", ["get", "intersection_kind"], ["literal", ["Connection", "MapEdge"]]]],
+          layout: { "line-sort-key": sortKey, "line-join": "round" },
+          paint: { "line-color": "#1a1e25", "line-width": 1.4, "line-opacity": 0.9 }
+        },
+        ...bandEdges("", ["<", LYR, 1]),     // ground / tunnel road casing
+        // --- FILLS (drawn after all casings, so fills cover internal seams) ---
+        // Junction asphalt matches the Driving lane colour (#5b6270) so roads and
+        // intersections fuse into one surface instead of leaving a darker blob at
+        // every fork. Signalled junctions keep a warm accent (also flagged by the
+        // traffic-light icon); dead-ends barely recede.
+        {
+          id: "intersections", type: "fill", source: "intersections",
+          // Fill everything except MapEdge (data-boundary caps). "Connection" nodes
+          // (a road split for a tag change) ARE filled: their little polygon sits
+          // between the two road halves, so hiding it left a background-coloured gap
+          // in the carriageway. Filled with road asphalt (below) it closes seamlessly.
+          filter: ["!=", ["get", "intersection_kind"], "MapEdge"],
+          layout: { "fill-sort-key": sortKey },
+          paint: {
+            "fill-color": ["case",
+              ["==", ["get", "control"], "Signalled"], "#5c5340",         // traffic light → warm
+              ["==", ["get", "intersection_kind"], "Terminus"], "#545b68", // dead end → barely recedes
+              "#5b6270"],                                                   // fuse with road asphalt
+            "fill-opacity": 1
+          }
+        },
+        ...bandFills("", ["<", LYR, 1]),     // ground / tunnel asphalt + paint
+        // elevated (bridges/overpasses) drawn on top, same casing-then-fill order
+        ...bandEdges("-hi", [">=", LYR, 1]),
+        ...bandFills("-hi", [">=", LYR, 1]),
+        // traffic-light marker at signalised junctions (control="Signalled")
+        {
+          id: "inter-signal", type: "symbol", source: "intersections",
+          filter: ["==", ["get", "control"], "Signalled"], minzoom: 15,
+          layout: {
+            "icon-image": "traffic-signal",
+            "icon-size": ["interpolate", ["exponential", 2], ["zoom"], 15, 0.16, 19, 0.8],
+            "icon-allow-overlap": true, "icon-ignore-placement": true
+          }
+        },
+        // staged edits (pending, not yet submitted) — magenta tint so you can
+        // see which ways you've changed before submitting the changeset
+        {
+          id: "staged-fill", type: "fill", source: "staged",
+          paint: { "fill-color": "#d94ff2", "fill-opacity": 0.28 }
+        },
+        {
+          id: "staged-line", type: "line", source: "staged",
+          paint: { "line-color": "#e879f9", "line-width": 1.5 }
+        },
+        // highlights on top of everything — light tint so road detail (lanes,
+        // markings, arrows) still shows through; the outline marks the selection
+        {
+          id: "hl-hover-fill", type: "fill", source: "hl-hover",
+          paint: { "fill-color": "#3aa0ff", "fill-opacity": 0.14 }
+        },
+        {
+          id: "hl-select-fill", type: "fill", source: "hl-select",
+          paint: { "fill-color": "#ffd23f", "fill-opacity": 0.16 }
+        },
+        {
+          id: "hl-hover-line", type: "line", source: "hl-hover",
+          paint: { "line-color": "#57b0ff", "line-width": 2 }
+        },
+        {
+          id: "hl-select-line", type: "line", source: "hl-select",
+          paint: { "line-color": "#ffd23f", "line-width": 3 }
+        },
+      ];
+
+      const map = new maplibregl.Map({
+        container: "map",
+        center: DEFAULT_CENTER,
+        zoom: DEFAULT_ZOOM,
+        style: {
+          version: 8,
+          sources: {
+            // Esri World Imagery — permitted for OSM tracing (in OSM's
+            // editor-imagery-index). Attribution is shown via the ⓘ control.
+            sat: {
+              type: "raster", tileSize: 256,
+              tiles: ["https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+              attribution: "Imagery © Esri, Maxar, Earthstar Geographics",
             },
-            layers: [
-              { id: "bg", type: "background", paint: { "background-color": "#0f1115" } },
-
-              // intersections sit under the lanes
-              {
-                id: "intersections",
-                type: "fill",
-                source: "intersections",
-                // paved junction area — a touch darker than driving lanes so
-                // junctions read as continuous pavement, not black gaps
-                paint: { "fill-color": "#4a505c", "fill-outline-color": "#5b6270" },
-              },
-
-              // lane polygons, coloured by type
-              {
-                id: "lanes",
-                type: "fill",
-                source: "lanes",
-                paint: {
-                  "fill-color": [
-                    "match", ["get", "type"],
-                    "Driving", "#5b6270",
-                    "Parking", "#494f5b",
-                    "Sidewalk", "#8a90a0",
-                    "Footway", "#8a90a0",
-                    "Shoulder", "#40454f",
-                    "Biking", "#2f6b4f",
-                    "Bus", "#6b3a3a",
-                    "SharedLeftTurn", "#6b5f3a",
-                    "LightRail", "#5a4a6b",
-                    /* other */ "#565c68",
-                  ],
-                  "fill-opacity": 0.95,
-                },
-              },
-              // thin casing on lane edges for definition
-              {
-                id: "lanes-outline",
-                type: "line",
-                source: "lanes",
-                paint: { "line-color": "#2b2f38", "line-width": 0.5 },
-              },
-
-              // markings: white by default, yellow for centre lines
-              {
-                id: "markings",
-                type: "fill",
-                source: "markings",
-                paint: {
-                  "fill-color": [
-                    "match", ["get", "type"],
-                    "center line", "#e8c84a",
-                    "vehicle stop line", "#ffffff",
-                    "lane arrow", "#d7dbe3",
-                    "lane separator", "#c9cdd6",
-                    "sidewalk corner", "#8a90a0",
-                    /* other */ "#ffffff",
-                  ],
-                  "fill-opacity": 0.9,
-                },
-              },
-            ],
+            lanes: { type: "geojson", data: lanesGeojson },
+            intersections: { type: "geojson", data: intersectionsGeojson },
+            markings: { type: "geojson", data: "data/markings.geojson" },
+            // highlight sources — fed via setData on hover/select (setFilter is
+            // gated on isStyleLoaded, which never settles in some embeds)
+            "hl-hover": { type: "geojson", data: { type: "FeatureCollection", features: [] } },
+            "hl-select": { type: "geojson", data: { type: "FeatureCollection", features: [] } },
+            "staged": { type: "geojson", data: { type: "FeatureCollection", features: [] } },
+            "turn-arrows": { type: "geojson", data: turnArrowsGeojson },
           },
-        });
+          layers: styleLayers,
+        },
+      });
 
-        map.addControl(new maplibregl.NavigationControl(), "top-right");
-        map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
-        window._m = map;
-        window._dataBounds = dataBounds; // press "f" to frame the whole network
-        document.addEventListener("keydown", (e) => {
-          if (e.key === "f" && dataBounds)
-            map.fitBounds(dataBounds, { padding: 40, maxZoom: 18 });
-        });
+      map.addControl(new maplibregl.NavigationControl(), "top-right");
+      map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
+      window._m = map;
+      window._dataBounds = dataBounds; // press "f" to frame the whole network
 
-        // layer toggles
-        const bind = (id, ...layers) => {
-          document.getElementById(id).addEventListener("change", (e) => {
-            const v = e.target.checked ? "visible" : "none";
-            layers.forEach((l) => map.getLayer(l) && map.setLayoutProperty(l, "visibility", v));
-          });
+      // The boot view is fixed (DEFAULT_CENTER, above). That's correct for the
+      // default area. But if you've fetched a different region, the loaded data
+      // won't sit under Pham Hung — so if the fixed center falls outside the
+      // data, frame the data instead. (Deterministic for the default; sensible
+      // fallback otherwise.)
+      map.on("load", () => {
+        if (dataBounds && !dataBounds.contains(DEFAULT_CENTER))
+          map.fitBounds(dataBounds, { padding: 40, maxZoom: 18, animate: false });
+      });
+
+      // draw a turn-arrow icon on a canvas for a turn key like "left_through".
+      // Default orientation points up (= travel direction); icon-rotate aligns it.
+      const makeArrowIcon = (key) => {
+        const S = 64, cx = S / 2, midY = S * 0.52, baseY = S - 6, topY = 8;
+        const cv = document.createElement("canvas");
+        cv.width = S; cv.height = S;
+        const g = cv.getContext("2d");
+        g.strokeStyle = "#f2f4f8"; g.fillStyle = "#f2f4f8";
+        g.lineWidth = 7; g.lineCap = "round"; g.lineJoin = "round";
+        const head = (x, y, ang) => {
+          const dx = Math.sin(ang), dy = -Math.cos(ang), L = 15, W = 10;
+          const bx = x - dx * L, by = y - dy * L, px = -dy, py = dx;
+          g.beginPath(); g.moveTo(x, y);
+          g.lineTo(bx + px * W, by + py * W);
+          g.lineTo(bx - px * W, by - py * W);
+          g.closePath(); g.fill();
         };
-        map.on("load", () => {
-          bind("t-lanes", "lanes", "lanes-outline");
-          bind("t-inter", "intersections");
-          bind("t-mark", "markings");
+        // shaft
+        g.beginPath(); g.moveTo(cx, baseY); g.lineTo(cx, midY); g.stroke();
+        const dirs = key.split("_");
+        for (const d of dirs) {
+          if (d === "through") {
+            g.beginPath(); g.moveTo(cx, midY); g.lineTo(cx, topY + 6); g.stroke();
+            head(cx, topY, 0);
+          } else if (d === "left") {
+            g.beginPath(); g.moveTo(cx, midY); g.lineTo(14, midY - 4); g.stroke();
+            head(8, midY - 4, -Math.PI / 2);
+          } else if (d === "right") {
+            g.beginPath(); g.moveTo(cx, midY); g.lineTo(S - 14, midY - 4); g.stroke();
+            head(S - 8, midY - 4, Math.PI / 2);
+          }
+        }
+        return g.getImageData(0, 0, S, S);
+      };
+      // small traffic-light glyph for signalised junctions (control="Signalled")
+      const makeSignalIcon = () => {
+        const S = 64;
+        const cv = document.createElement("canvas");
+        cv.width = S; cv.height = S;
+        const g = cv.getContext("2d");
+        const w = 26, h = 54, x = (S - w) / 2, y = (S - h) / 2, r = 9;
+        g.fillStyle = "#14171d"; g.strokeStyle = "#eef1f6"; g.lineWidth = 3.5;
+        g.beginPath();
+        g.moveTo(x + r, y);
+        g.arcTo(x + w, y, x + w, y + h, r);
+        g.arcTo(x + w, y + h, x, y + h, r);
+        g.arcTo(x, y + h, x, y, r);
+        g.arcTo(x, y, x + w, y, r);
+        g.closePath(); g.fill(); g.stroke();
+        const cx = S / 2, rad = 6.5;
+        [["#ff5b5b", y + 13], ["#ffcf4a", y + 27], ["#4ddc7a", y + 41]].forEach(([c, cy]) => {
+          g.beginPath(); g.arc(cx, cy, rad, 0, Math.PI * 2); g.fillStyle = c; g.fill();
         });
+        return g.getImageData(0, 0, S, S);
+      };
+      map.on("styleimagemissing", (e) => {
+        if (map.hasImage(e.id)) return;
+        try {
+          const img = e.id === "traffic-signal" ? makeSignalIcon() : makeArrowIcon(e.id);
+          map.addImage(e.id, img, { pixelRatio: 2 });
+        } catch (_) { }
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "f" && dataBounds)
+          map.fitBounds(dataBounds, { padding: 40, maxZoom: 18 });
+      });
 
-        // click a lane -> show its properties + OSM way id
-        map.on("click", "lanes", (e) => {
-          const p = e.features[0].properties;
-          let ways = p.osm_way_ids || "";
-          try { ways = JSON.parse(ways).join(", "); } catch (_) {}
-          new maplibregl.Popup()
-            .setLngLat(e.lngLat)
-            .setHTML(
-              `<b>${p.type}</b> lane<br/>direction: ${p.direction}<br/>` +
-                `width: ${Number(p.width).toFixed(1)} m<br/>` +
-                `speed: ${p.speed_limit}<br/>` +
-                (ways ? `OSM way: ${ways}` : "")
-            )
-            .addTo(map);
+      // ---- fly to a pasted "lat, lng" (Google-Maps style) ----
+      let gotoMarker = null;
+      const goTo = () => {
+        const st = document.getElementById("goto-status");
+        const raw = document.getElementById("goto-input").value.trim();
+        // accept "lat, lng" or "lat lng" (Google/OSM order); MapLibre wants [lng, lat]
+        const m = raw.match(/^(-?\d+(?:\.\d+)?)\s*[,\s]\s*(-?\d+(?:\.\d+)?)$/);
+        if (!m) { st.textContent = "enter as: lat, lng"; return; }
+        const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+        if (Math.abs(lat) > 90 || Math.abs(lng) > 180) { st.textContent = "out of range"; return; }
+        st.textContent = "";
+        map.flyTo({ center: [lng, lat], zoom: 18, speed: 1.4 });
+        if (gotoMarker) gotoMarker.remove();
+        gotoMarker = new maplibregl.Marker({ color: "#2f6bd6" }).setLngLat([lng, lat]).addTo(map);
+      };
+      document.getElementById("goto-btn").onclick = goTo;
+      document.getElementById("goto-input").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") goTo();
+      });
+
+      // layer toggles
+      const bind = (id, ...layers) => {
+        document.getElementById(id).addEventListener("change", (e) => {
+          const v = e.target.checked ? "visible" : "none";
+          layers.forEach((l) => map.getLayer(l) && map.setLayoutProperty(l, "visibility", v));
         });
-        map.on("mouseenter", "lanes", () => (map.getCanvas().style.cursor = "pointer"));
-        map.on("mouseleave", "lanes", () => (map.getCanvas().style.cursor = ""));
+      };
+      // match every lane feature belonging to one OSM way (osm_way_ids is a
+      // JSON-array string like "[123]" or "[123,456]")
+      const NONE = ["==", ["get", "osm_way_ids"], " "];
+      const wayFilter = (id) =>
+        id == null ? NONE : ["any",
+          ["==", ["get", "osm_way_ids"], `[${id}]`],
+          ["in", `[${id},`, ["get", "osm_way_ids"]],
+          ["in", `,${id},`, ["get", "osm_way_ids"]],
+          ["in", `,${id}]`, ["get", "osm_way_ids"]],
+        ];
+      // osm_way_ids / osm_node_ids arrive as a NATIVE ARRAY from the raw geojson
+      // (currentLanes/currentIntersections), but as a JSON-array STRING from
+      // queryRenderedFeatures (MapLibre stringifies non-primitive props). This
+      // normalizes both — without it, merged ways (osm_way_ids=[a,b]) failed the
+      // old JSON.parse(string) path and never highlighted on hover/select.
+      const idList = (v) => {
+        if (Array.isArray(v)) return v.map(Number);
+        if (v == null || v === "") return [];
+        try { const p = JSON.parse(v); return Array.isArray(p) ? p.map(Number) : [Number(p)]; }
+        catch (_) { return [Number(v)]; }
+      };
+      const parseWayId = (f) => idList(f.properties.osm_way_ids)[0];
+
+      // layer toggles (highlight layers hl-* are declared in the style above)
+      bind("t-lanes", "lanes", "lanes-edge", "lanes-hi", "lanes-edge-hi");
+      bind("t-inter", "intersections", "inter-edge", "inter-signal");
+      bind("t-mark", "markings", "markings-hi");
+      bind("t-turn", "turn-left", "turn-right", "turn-arrows",
+        "turn-left-hi", "turn-right-hi", "turn-arrows-hi");
+
+      // satellite basemap toggle + HD-opacity slider (fade polygons to trace imagery)
+      document.getElementById("t-sat").addEventListener("change", (e) => {
+        map.setLayoutProperty("satellite", "visibility", e.target.checked ? "visible" : "none");
+      });
+      // [layer id, paint prop, base opacity] for every HD layer the slider fades
+      const HD_OPACITY = [
+        ["lanes", "fill-opacity", 1], ["lanes-hi", "fill-opacity", 1],
+        ["lanes-edge", "line-opacity", 1], ["lanes-edge-hi", "line-opacity", 1],
+        ["markings", "fill-opacity", 0.9], ["markings-hi", "fill-opacity", 0.9],
+        ["turn-left", "fill-opacity", 0.55], ["turn-left-hi", "fill-opacity", 0.55],
+        ["turn-right", "fill-opacity", 0.55], ["turn-right-hi", "fill-opacity", 0.55],
+        ["intersections", "fill-opacity", 1], ["inter-edge", "line-opacity", 0.9],
+        ["turn-arrows", "icon-opacity", 1], ["turn-arrows-hi", "icon-opacity", 1],
+      ];
+      document.getElementById("hd-op").addEventListener("input", (e) => {
+        const f = e.target.value / 100;
+        HD_OPACITY.forEach(([id, prop, base]) => {
+          if (map.getLayer(id)) map.setPaintProperty(id, prop, base * f);
+        });
+      });
+
+      // all lane features belonging to one OSM way
+      const EMPTY = { type: "FeatureCollection", features: [] };
+      const waySubset = (id) => ({
+        type: "FeatureCollection",
+        features: currentLanes.features.filter(
+          (f) => idList(f.properties.osm_way_ids).includes(Number(id))),
+      });
+      // intersection polygon(s) carrying a given OSM node id (for node editing)
+      const nodeIdsOf = (f) => idList(f.properties.osm_node_ids).map(String);
+      const nodeSubset = (nid) => ({
+        type: "FeatureCollection",
+        features: currentIntersections.features.filter((f) => nodeIdsOf(f).includes(String(nid))),
+      });
+      const setSrc = (id, data) => { const s = map.getSource(id); if (s) s.setData(data); };
+
+      // interactions must cover BOTH elevation bands (ground + elevated),
+      // else overpass/bridge lanes (layer>=1, in "lanes-hi") aren't hoverable.
+      const LANE_LAYERS = ["lanes", "lanes-hi"];
+      // when features overlap (overpass over road), pick the topmost = highest layer
+      const topWayId = (feats) => {
+        const f = feats.slice().sort(
+          (a, b) => (Number(b.properties.layer) || 0) - (Number(a.properties.layer) || 0)
+        )[0];
+        return f ? parseWayId(f) : null;
+      };
+
+      // ---- selection state: a way (lanes) OR a node (intersection) ----
+      let hoverId = null;
+      let selected = null; // { kind: "way" | "node", id }
+      const subsetFor = (kind, id) => (kind === "node" ? nodeSubset(id) : waySubset(id));
+      const select = (kind, id) => { selected = { kind, id }; setSrc("hl-select", subsetFor(kind, id)); };
+      const reselect = () => { if (selected) setSrc("hl-select", subsetFor(selected.kind, selected.id)); };
+
+      // hover highlight (blue)
+      map.on("mousemove", LANE_LAYERS, (e) => {
+        map.getCanvas().style.cursor = "pointer";
+        const id = topWayId(e.features);
+        if (id === hoverId) return;
+        hoverId = id;
+        setSrc("hl-hover", waySubset(id));
+      });
+      map.on("mouseleave", LANE_LAYERS, () => {
+        map.getCanvas().style.cursor = "";
+        hoverId = null;
+        setSrc("hl-hover", EMPTY);
+      });
+
+      // click a lane -> select (yellow) + open the way tag editor
+      map.on("click", LANE_LAYERS, (e) => {
+        const wid = topWayId(e.features);
+        if (wid) { select("way", wid); openEditor("way", wid); }
+      });
+      // click an intersection -> edit its OSM node's tags (traffic_signals, …)
+      map.on("mouseenter", "intersections", () => (map.getCanvas().style.cursor = "pointer"));
+      map.on("mouseleave", "intersections", () => (map.getCanvas().style.cursor = ""));
+      map.on("click", "intersections", (e) => {
+        // a lane on top of the junction takes priority (handled above)
+        if (map.queryRenderedFeatures(e.point, { layers: LANE_LAYERS }).length) return;
+        const nid = nodeIdsOf(e.features[0])[0];
+        if (nid) { select("node", nid); openEditor("node", nid); }
+      });
+
+      // ---- live sync: poll version.json; on change, reload the 3 sources in
+      // place (keeps the current pan/zoom). Driven by watch.mjs. ----
+      const dot = document.getElementById("live-dot");
+      const txt = document.getElementById("live-text");
+      let curVersion = null;
+      let missed = 0;
+
+      const reloadSources = async (v) => {
+        const [ln, mk, it, ta] = await Promise.all([
+          fetch(`data/lanes.geojson?v=${v}`).then((r) => r.json()),
+          fetch(`data/markings.geojson?v=${v}`).then((r) => r.json()),
+          fetch(`data/intersections.geojson?v=${v}`).then((r) => r.json()),
+          fetch(`data/turn_arrows.geojson?v=${v}`).then((r) => r.json()).catch(() => null),
+        ]);
+        map.getSource("lanes").setData(ln);
+        map.getSource("markings").setData(mk);
+        map.getSource("intersections").setData(it);
+        if (ta) map.getSource("turn-arrows").setData(ta);
+        currentLanes = ln;
+        currentIntersections = it;
+        reselect(); // re-highlight the selected way/node after reload
+        if (window._refreshStaged) window._refreshStaged(); // keep staged tint after reload
+        const t = new Date().toLocaleTimeString();
+        txt.textContent = `live sync: updated ${t}`;
+        dot.style.background = "#3ddc84";
+        setTimeout(() => (dot.style.background = "#2f9e5c"), 900);
+      };
+
+      // ---- tag editor (ways: lane tags; nodes: point tags like signals) ----
+      const ed = document.getElementById("editor");
+      const edRows = document.getElementById("ed-rows");
+      const edStatus = document.getElementById("ed-status");
+      let editingKind = null, editingId = null, editingOrig = {};
+      // one-click keys, per element kind
+      const QUICK_WAY = ["lanes", "lanes:forward", "lanes:backward", "oneway",
+        "turn:lanes", "turn:lanes:forward", "turn:lanes:backward",
+        "name", "maxspeed", "surface",
+        // vehicle-kind access (values: yes / no / designated / private …)
+        "access", "motor_vehicle", "motorcycle", "moped", "bicycle", "foot", "hgv", "bus"];
+      const QUICK_NODE = ["highway", "crossing", "traffic_calming",
+        "stop", "give_way", "railway", "barrier"];
+
+      const addRow = (k = "", v = "") => {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.innerHTML =
+          `<input class="k" placeholder="key" value="${k.replace(/"/g, "&quot;")}">` +
+          `<input class="v" placeholder="value" value="${v.replace(/"/g, "&quot;")}">` +
+          `<button class="del" title="remove">✕</button>`;
+        row.querySelector(".del").onclick = () => row.remove();
+        edRows.appendChild(row);
+        return row;
+      };
+      // manual "+ add tag": a blank row for ANY key you type (not just the
+      // quick-add presets) — focus the key field so you can start typing at once
+      document.getElementById("ed-addrow").onclick = () => {
+        addRow().querySelector(".k").focus();
+      };
+
+      // quick-add buttons (rebuilt per element kind)
+      const quickWrap = document.getElementById("ed-quick");
+      const renderQuick = (keys) => {
+        quickWrap.innerHTML = "";
+        keys.forEach((k) => {
+          const b = document.createElement("button");
+          b.textContent = k;
+          b.onclick = () => {
+            const rows = [...edRows.querySelectorAll(".row")];
+            const hit = rows.find((r) => r.querySelector(".k").value === k);
+            (hit || addRow(k)).querySelector(".v").focus();
+          };
+          quickWrap.appendChild(b);
+        });
+      };
+
+      async function openEditor(kind, id) {
+        editingKind = kind; editingId = id;
+        document.getElementById("ed-title").textContent =
+          kind === "node" ? "Edit node tags" : "Edit lane tags";
+        document.getElementById("ed-kind").textContent = kind;
+        document.getElementById("ed-id").textContent = id;
+        document.getElementById("ed-osm").href = `https://www.openstreetmap.org/${kind}/${id}`;
+        document.getElementById("ed-split").style.display = kind === "way" ? "block" : "none";
+        document.getElementById("ed-lanes").style.display = kind === "way" ? "block" : "none";
+        renderQuick(kind === "node" ? QUICK_NODE : QUICK_WAY);
+        edStatus.textContent = "loading tags…";
+        edRows.innerHTML = "";
+        ed.style.display = "block";
+        try {
+          const info = await fetch(`/api/${kind}?id=${id}`).then((r) => r.json());
+          const tags = info.tags || {};
+          editingOrig = { ...tags };
+          Object.entries(tags).forEach(([k, v]) => addRow(k, v));
+          if (!Object.keys(tags).length) addRow();
+          edStatus.textContent = `${Object.keys(tags).length} tags`;
+          renderWarnings();
+          if (kind === "way") { // prime the visual lane editor (collapsed by default)
+            laneModel = parseLaneModel(tags);
+            renderLaneDiagram();
+            laneBody.style.display = "none";
+            laneToggle.textContent = "▸ Visual lane editor";
+          }
+        } catch (err) {
+          editingOrig = {};
+          edStatus.textContent = "could not load tags (is server.mjs running?)";
+        }
       }
-      main();
-    </script>
-  </body>
+
+      // ---- collect current rows into a tag object ----
+      const collectTags = () => {
+        const tags = {};
+        edRows.querySelectorAll(".row").forEach((r) => {
+          const k = r.querySelector(".k").value.trim();
+          const v = r.querySelector(".v").value.trim();
+          if (k) tags[k] = v;
+        });
+        return tags;
+      };
+
+      // ---- lightweight lane-tag validator (JOSM-style, non-blocking) ----
+      const TURN_TOKENS = new Set(["through", "left", "right", "slight_left",
+        "slight_right", "sharp_left", "sharp_right", "merge_to_left",
+        "merge_to_right", "reverse", "none", ""]);
+      function laneWarnings(t) {
+        const warn = [];
+        const int = (s) => (/^\d+$/.test(s || "") ? +s : null);
+        const count = (s) => (s == null ? null : String(s).split("|").length);
+        const lanes = int(t["lanes"]);
+        if (t["lanes"] != null && lanes == null) warn.push(`lanes="${t["lanes"]}" is not a whole number`);
+        const oneway = t["oneway"] === "yes" || t["oneway"] === "-1";
+        const lf = int(t["lanes:forward"]), lb = int(t["lanes:backward"]);
+        const checkTurn = (key, expected, label) => {
+          if (t[key] == null) return;
+          const c = count(t[key]);
+          if (expected != null && c !== expected)
+            warn.push(`${key} has ${c} lane(s) but ${label}=${expected}`);
+          String(t[key]).split("|").forEach((seg) =>
+            seg.split(";").forEach((tok) => {
+              if (!TURN_TOKENS.has(tok)) warn.push(`${key}: unknown turn "${tok}"`);
+            }));
+        };
+        if (oneway) {
+          checkTurn("turn:lanes", lanes, "lanes");
+          if (t["lanes:backward"] != null) warn.push(`oneway=yes but lanes:backward is set`);
+          if (t["turn:lanes:backward"] != null) warn.push(`oneway=yes but turn:lanes:backward is set`);
+        } else {
+          checkTurn("turn:lanes:forward", lf, "lanes:forward");
+          checkTurn("turn:lanes:backward", lb, "lanes:backward");
+          if (t["turn:lanes"] != null) checkTurn("turn:lanes", lanes, "lanes");
+          if (lf != null && lb != null && lanes != null && lf + lb !== lanes)
+            warn.push(`lanes:forward(${lf}) + lanes:backward(${lb}) ≠ lanes(${lanes})`);
+        }
+        if (t["width"] != null && isNaN(parseFloat(t["width"]))) warn.push(`width="${t["width"]}" is not numeric`);
+        return [...new Set(warn)];
+      }
+      const edWarn = document.getElementById("ed-warn");
+      function renderWarnings() {
+        const w = laneWarnings(collectTags());
+        edWarn.innerHTML = w.map((s) => `<div class="w">⚠ ${s}</div>`).join("");
+        edWarn.style.display = w.length ? "block" : "none";
+        return w;
+      }
+      edRows.addEventListener("input", renderWarnings);
+
+      // ---- Visual lane editor (roadmap #6) --------------------------------
+      // osm2streets is one-directional (tags -> geometry), so this does NOT
+      // reverse geometry. It parses the way's lane TAGS into a per-lane model,
+      // lets you edit turns / counts / direction as a diagram, and writes the
+      // standard tags back into the rows above — which then stage & submit
+      // through the normal path. Scope: the common symmetric cases —
+      // lanes(:forward|:backward), oneway, turn:lanes(:forward|:backward).
+      const LANE_KEYS = ["lanes", "lanes:forward", "lanes:backward", "oneway",
+        "turn:lanes", "turn:lanes:forward", "turn:lanes:backward"];
+      // click-cycle presets (left→right stacking of turn arrows)
+      const TURN_CYCLE = [[], ["through"], ["left"], ["right"],
+      ["left", "through"], ["through", "right"], ["left", "through", "right"]];
+      const cycleKey = (t) => t.join(";");
+      const CYCLE_INDEX = new Map(TURN_CYCLE.map((t, i) => [cycleKey(t), i]));
+      const intOr = (s, d) => (/^\d+$/.test(String(s ?? "").trim()) ? +s : d);
+      const splitTurns = (s) => String(s).split("|").map((seg) =>
+        seg.split(";").map((x) => x.trim()).filter((x) => x && x !== "none"));
+
+      let laneModel = null; // { oneway, onewayRaw, forward:[[tok..]], backward:[[tok..]] }
+      function parseLaneModel(t) {
+        const onewayRaw = t["oneway"];
+        const oneway = onewayRaw === "yes" || onewayRaw === "-1" || onewayRaw === "true";
+        // build a lane array from a turn:lanes* tag and/or a lane count
+        const mk = (turnsTag, count) => {
+          let lanes = turnsTag != null ? splitTurns(turnsTag) : [];
+          const n = intOr(count, lanes.length || 1);
+          while (lanes.length < n) lanes.push([]);
+          if (lanes.length > n && turnsTag == null) lanes = lanes.slice(0, n);
+          return lanes;
+        };
+        if (oneway)
+          return { oneway: true, onewayRaw, forward: mk(t["turn:lanes"], t["lanes"]), backward: [] };
+        const total = intOr(t["lanes"], null);
+        let lf = intOr(t["lanes:forward"], null), lb = intOr(t["lanes:backward"], null);
+        if (lf == null && lb == null && total != null) { lf = Math.ceil(total / 2); lb = total - lf; }
+        return {
+          oneway: false, onewayRaw,
+          forward: mk(t["turn:lanes:forward"], lf),
+          backward: mk(t["turn:lanes:backward"], lb)
+        };
+      }
+      const serTurns = (a) => (a.length ? a.join(";") : "none");
+      function laneModelToTags(m) {
+        const out = {}, anyTurns = (ls) => ls.some((l) => l.length);
+        if (m.oneway) {
+          out["oneway"] = m.onewayRaw === "-1" ? "-1" : "yes";
+          out["lanes"] = String(m.forward.length);
+          if (anyTurns(m.forward)) out["turn:lanes"] = m.forward.map(serTurns).join("|");
+        } else {
+          out["lanes"] = String(m.forward.length + m.backward.length);
+          out["lanes:forward"] = String(m.forward.length);
+          out["lanes:backward"] = String(m.backward.length);
+          if (anyTurns(m.forward)) out["turn:lanes:forward"] = m.forward.map(serTurns).join("|");
+          if (anyTurns(m.backward)) out["turn:lanes:backward"] = m.backward.map(serTurns).join("|");
+        }
+        return out;
+      }
+      // arrow glyph for one lane's turn set (SVG, points "up" = travel direction)
+      function laneGlyphSvg(turns) {
+        const S = "#dfe6f2", W = 3;
+        const head = (ex, ey, fx = 19, fy = 27) => {
+          const ang = Math.atan2(ex - fx, -(ey - fy));
+          const dx = Math.sin(ang), dy = -Math.cos(ang), L = 7, HW = 4.5;
+          const bx = ex - dx * L, by = ey - dy * L, px = -dy, py = dx;
+          return `<path d="M${ex},${ey} L${(bx + px * HW).toFixed(1)},${(by + py * HW).toFixed(1)} ` +
+            `L${(bx - px * HW).toFixed(1)},${(by - py * HW).toFixed(1)} Z" fill="${S}"/>`;
+        };
+        const line = (ex, ey) => `<line x1="19" y1="27" x2="${ex}" y2="${ey}" stroke="${S}" stroke-width="${W}" stroke-linecap="round"/>`;
+        if (!turns.length)
+          return `<svg width="38" height="46" viewBox="0 0 38 46">` +
+            `<line x1="19" y1="42" x2="19" y2="8" stroke="#48546a" stroke-width="${W}" stroke-dasharray="3 4" stroke-linecap="round"/></svg>`;
+        const ENDS = {
+          through: [19, 10], left: [5, 17], right: [33, 17],
+          slight_left: [9, 12], slight_right: [29, 12],
+          merge_to_left: [8, 18], merge_to_right: [30, 18]
+        };
+        let g = `<line x1="19" y1="44" x2="19" y2="27" stroke="${S}" stroke-width="${W}" stroke-linecap="round"/>`;
+        const extra = [];
+        for (const d of turns) {
+          if (d === "reverse") { g += `<line x1="19" y1="27" x2="19" y2="40" stroke="${S}" stroke-width="${W}"/>` + head(19, 42, 19, 30); continue; }
+          const e = ENDS[d];
+          if (e) g += line(e[0], e[1]) + head(e[0], e[1]);
+          else extra.push(d);
+        }
+        const lbl = extra.length
+          ? `<text x="19" y="45" fill="#9aa4b5" font-size="7" text-anchor="middle">${extra.join(",").slice(0, 6)}</text>` : "";
+        return `<svg width="38" height="46" viewBox="0 0 38 46">${g}${lbl}</svg>`;
+      }
+
+      const laneToggle = document.getElementById("ed-lanes-toggle");
+      const laneBody = document.getElementById("ed-lanes-body");
+      const laneOneway = document.getElementById("lane-oneway");
+      const lgBackward = document.getElementById("lg-backward");
+      const renderStrip = (dir) => {
+        const strip = document.getElementById("strip-" + dir);
+        strip.innerHTML = "";
+        laneModel[dir].forEach((turns, i) => {
+          const cell = document.createElement("div");
+          cell.className = "lane";
+          cell.title = turns.length ? turns.join(", ") : "no turn marking (click to set)";
+          cell.innerHTML = laneGlyphSvg(turns);
+          cell.onclick = (ev) => {
+            const idx = CYCLE_INDEX.get(cycleKey(laneModel[dir][i]));
+            const ni = idx == null ? 0
+              : (idx + (ev.shiftKey ? TURN_CYCLE.length - 1 : 1)) % TURN_CYCLE.length;
+            laneModel[dir][i] = TURN_CYCLE[ni].slice();
+            renderStrip(dir);
+            applyLaneModelToRows();
+          };
+          strip.appendChild(cell);
+        });
+      };
+      const renderLaneDiagram = () => {
+        laneOneway.checked = laneModel.oneway;
+        lgBackward.style.display = laneModel.oneway ? "none" : "block";
+        renderStrip("forward");
+        if (!laneModel.oneway) renderStrip("backward");
+      };
+      const rebuildDiagramFromRows = () => { laneModel = parseLaneModel(collectTags()); renderLaneDiagram(); };
+      function applyLaneModelToRows() {
+        const computed = laneModelToTags(laneModel);
+        const cur = collectTags(), keep = {};
+        for (const [k, v] of Object.entries(cur)) if (!LANE_KEYS.includes(k)) keep[k] = v;
+        edRows.innerHTML = "";
+        Object.entries(keep).forEach(([k, v]) => addRow(k, v));   // non-lane tags first
+        Object.entries(computed).forEach(([k, v]) => addRow(k, v)); // then managed lane tags
+        if (!edRows.querySelector(".row")) addRow();
+        renderWarnings();
+      }
+      laneToggle.onclick = () => {
+        const open = laneBody.style.display === "none";
+        laneBody.style.display = open ? "block" : "none";
+        laneToggle.textContent = (open ? "▾" : "▸") + " Visual lane editor";
+        if (open) rebuildDiagramFromRows(); // re-sync from any hand-edits
+      };
+      laneOneway.onchange = () => {
+        laneModel.oneway = laneOneway.checked;
+        if (laneModel.oneway) laneModel.backward = [];
+        else if (!laneModel.backward.length) laneModel.backward = [[]];
+        renderLaneDiagram();
+        applyLaneModelToRows();
+      };
+      laneBody.querySelectorAll(".lg-plus").forEach((b) => b.onclick = () => {
+        laneModel[b.dataset.dir].push([]);
+        renderStrip(b.dataset.dir);
+        applyLaneModelToRows();
+      });
+      laneBody.querySelectorAll(".lg-minus").forEach((b) => b.onclick = () => {
+        const dir = b.dataset.dir;
+        if (laneModel[dir].length <= 1) return; // keep at least one lane per active direction
+        laneModel[dir].pop();
+        renderStrip(dir);
+        applyLaneModelToRows();
+      });
+      // explicit "⟲ rebuild from tags": reparse hand-edited tags into the
+      // diagram AND write them back normalized (so e.g. lanes = forward+backward
+      // is made consistent). Toggle-open stays read-only (no surprise rewrites).
+      document.getElementById("lane-from-tags").onclick = () => {
+        rebuildDiagramFromRows();
+        applyLaneModelToRows();
+      };
+      // auto-sync the diagram from hand-typed tag edits (debounced ~300ms). This is
+      // DIAGRAM-ONLY — it re-renders the cells but never rewrites the rows, so the
+      // field you're typing in keeps its focus/cursor. Only while the visual panel
+      // is open on a way. (Diagram-driven row rebuilds set input.value without
+      // firing "input", so there's no feedback loop back into here.)
+      let laneSyncTimer = null;
+      edRows.addEventListener("input", () => {
+        if (editingKind !== "way" || laneBody.style.display === "none") return;
+        clearTimeout(laneSyncTimer);
+        laneSyncTimer = setTimeout(() => {
+          if (editingKind === "way" && laneBody.style.display !== "none")
+            rebuildDiagramFromRows();
+        }, 300);
+      });
+
+      const clearSelection = () => {
+        selected = null;
+        setSrc("hl-select", EMPTY);
+      };
+
+      // ---- staging (plan step 2): edits held in the browser, shown as a magenta
+      // tint until you Submit them as one changeset. "Stage edit" does NOT hit the
+      // backend, so geometry won't reshape until submit. Keyed "way:id"/"node:id".
+      const pendingEdits = {}; // key -> { kind, id, tags, orig }
+      const editKey = (kind, id) => `${kind}:${id}`;
+      const btnSubmit = document.getElementById("btn-submit");
+      const toolStatus = document.getElementById("tool-status");
+      const stagedList = document.getElementById("staged-list");
+      const wayIdsOf = (f) => idList(f.properties.osm_way_ids).map(String);
+      const stagedIds = (kind) => new Set(
+        Object.values(pendingEdits).filter((e) => e.kind === kind).map((e) => String(e.id)));
+      const stagedSubset = () => {
+        const w = stagedIds("way"), n = stagedIds("node");
+        return {
+          type: "FeatureCollection",
+          features: [
+            ...currentLanes.features.filter((f) => wayIdsOf(f).some((id) => w.has(id))),
+            ...(n.size ? currentIntersections.features.filter(
+              (f) => nodeIdsOf(f).some((id) => n.has(id))) : []),
+          ],
+        };
+      };
+      // short "k=v, −k" summary of what changed vs the loaded tags
+      const changeSummary = (e) => {
+        const parts = [], keys = new Set([...Object.keys(e.orig || {}), ...Object.keys(e.tags || {})]);
+        for (const k of keys) {
+          const a = (e.orig || {})[k], b = (e.tags || {})[k];
+          if (a === b) continue;
+          parts.push(b == null || b === "" ? `−${k}` : `${k}=${b}`);
+        }
+        return parts.length ? parts.join(", ") : "(no change)";
+      };
+      const renderStagedList = () => {
+        stagedList.innerHTML = "";
+        for (const [key, e] of Object.entries(pendingEdits)) {
+          const item = document.createElement("div");
+          item.className = "item";
+          const lbl = document.createElement("span");
+          lbl.className = "lbl";
+          const text = `${e.kind} ${e.id} · ${changeSummary(e)}`;
+          lbl.textContent = text; lbl.title = text;
+          const rm = document.createElement("button");
+          rm.className = "rm"; rm.textContent = "✕"; rm.title = "discard this staged edit";
+          rm.onclick = () => { delete pendingEdits[key]; refreshStaged(); };
+          item.append(lbl, rm);
+          stagedList.appendChild(item);
+        }
+      };
+      const refreshStaged = () => {
+        const n = Object.keys(pendingEdits).length;
+        setSrc("staged", n ? stagedSubset() : EMPTY);
+        btnSubmit.textContent = `Submit changeset (${n})`;
+        btnSubmit.classList.toggle("ready", n > 0);
+        renderStagedList();
+      };
+      window._refreshStaged = refreshStaged;
+
+      document.getElementById("ed-cancel").onclick = () => {
+        ed.style.display = "none";
+        clearSelection();
+      };
+      document.getElementById("ed-apply").onclick = () => {
+        if (editingId == null) return;
+        renderWarnings(); // surface issues, but staging is non-blocking
+        pendingEdits[editKey(editingKind, editingId)] = {
+          kind: editingKind, id: editingId, tags: collectTags(), orig: editingOrig,
+        };
+        refreshStaged();
+        ed.style.display = "none";
+        clearSelection();
+        toolStatus.textContent =
+          `staged ${editingKind} ${editingId} — ${Object.keys(pendingEdits).length} pending edit(s)`;
+      };
+
+      // ---- JOSM Remote Control reachability probe ----
+      // The Submit/Split handoffs POST to JOSM's Remote Control on 127.0.0.1:8111.
+      // If JOSM isn't running (or Remote Control is disabled) that request just
+      // fails silently, so the tool would falsely report "opened in JOSM". Probe
+      // the always-available /version endpoint first — Remote Control sends CORS
+      // headers, so a normal fetch resolves ONLY when JOSM is up with it enabled.
+      // (Short timeout so a stuck port can't stall the button.)
+      async function josmReachable(timeoutMs = 1500) {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), timeoutMs);
+        try {
+          const r = await fetch("http://127.0.0.1:8111/version",
+            { cache: "no-store", signal: ctrl.signal });
+          return r.ok;
+        } catch (_) {
+          return false; // connection refused, or CORS blocked (Remote Control off)
+        } finally {
+          clearTimeout(t);
+        }
+      }
+      const JOSM_HELP =
+        "Open JOSM, then enable Edit → Preferences → Remote Control → " +
+        "“Enable remote control”.";
+
+      // ---- Split a way in JOSM (roadmap #2, safe handoff) ----
+      // Geometry ops (splitting a way, inserting a node) belong in JOSM, which
+      // does them flawlessly with `P`. So instead of reimplementing topology,
+      // load the way into JOSM (fresh OSM data), selected, ready to split. After
+      // splitting + uploading there, re-Fetch here to tag the new segments.
+      document.getElementById("ed-split").onclick = async () => {
+        if (editingKind !== "way" || editingId == null) return;
+        const sub = waySubset(editingId);
+        if (!sub.features.length) { toolStatus.textContent = "can't locate way geometry"; return; }
+        // same JOSM handoff dependency as Submit — warn if it isn't reachable
+        toolStatus.textContent = "checking JOSM…";
+        if (!(await josmReachable()) && !confirm(
+          "JOSM isn’t reachable — it may not be running, or Remote Control isn’t " +
+          "enabled, so the way won’t open there.\n\n" + JOSM_HELP + "\n\nTry anyway?")) {
+          toolStatus.textContent = "cancelled — JOSM not reachable (enable Remote Control)";
+          return;
+        }
+        let b = null;
+        const grow = (c) => {
+          if (typeof c[0] === "number")
+            b = b ? b.extend(c) : new maplibregl.LngLatBounds(c, c);
+          else c.forEach(grow);
+        };
+        sub.features.forEach((f) => grow(f.geometry.coordinates));
+        const pad = 0.0006; // ~60 m of context around the way
+        const url = `http://127.0.0.1:8111/load_and_zoom` +
+          `?left=${b.getWest() - pad}&right=${b.getEast() + pad}` +
+          `&top=${b.getNorth() + pad}&bottom=${b.getSouth() - pad}` +
+          `&select=way${editingId}`;
+        fetch(url, { mode: "no-cors" }).catch(() => { });
+        ed.style.display = "none";
+        clearSelection();
+        toolStatus.innerHTML =
+          `opening way ${editingId} in JOSM — select the split node + way, press <b>P</b>, ` +
+          `then Upload there. Back here, click <b>Fetch OSM data</b> to tag the new segments.` +
+          `<br><span style="opacity:.6">(geometry in JOSM on fresh OSM data, tags here. ` +
+          `Needs JOSM Remote Control.)</span>`;
+      };
+
+      // ---- Fetch OSM data for the current view (plan step 1) ----
+      document.getElementById("btn-fetch").onclick = async () => {
+        // guard 1: staged (un-submitted) edits live only in the browser
+        const staged = Object.keys(pendingEdits).length;
+        if (staged && !confirm(
+          `${staged} staged (un-submitted) edit(s) will be discarded when you load a ` +
+          `new area. Continue?`)) return;
+        const b = map.getBounds();
+        const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+        const doFetch = async (force) => {
+          const resp = await fetch("/api/fetch", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bbox, force }),
+          }).then((r) => r.json());
+          // guard 2: server refuses to overwrite tool-applied edits (action=modify)
+          // in current.osm unless we confirm — this is what silently lost edits before.
+          // NB: the tool marks edits action="modify" on Submit, and a JOSM upload does
+          // NOT clear that marker (JOSM uploads from its own imported layer, never
+          // writing back here). So we CANNOT tell "already uploaded" from "not yet" —
+          // say so honestly instead of claiming they're un-uploaded.
+          if (resp.needsConfirm) {
+            if (!confirm(
+              `You edited ${resp.pendingModified} way(s) in this tool — current.osm still ` +
+              `marks them action="modify".\n\n` +
+              `The tool can't tell whether you've uploaded them in JOSM yet:\n` +
+              `  • Already uploaded in JOSM → safe: fetching pulls fresh OSM data that ` +
+              `includes your uploads.\n` +
+              `  • Not uploaded yet → fetching a new area discards them (they are NOT in git).\n\n` +
+              `Fetch anyway?`)) {
+              toolStatus.textContent = "fetch cancelled — local edits kept (upload in JOSM first if needed)";
+              return;
+            }
+            return doFetch(true);
+          }
+          if (resp.error) { toolStatus.textContent = "fetch failed: " + resp.error; return; }
+          Object.keys(pendingEdits).forEach((k) => delete pendingEdits[k]); // new area → drop stale stage
+          refreshStaged();
+          curVersion = resp.version;
+          await reloadSources(resp.version);
+          toolStatus.textContent = `fetched — ${resp.counts?.lanes ?? "?"} lanes in view`;
+        };
+        toolStatus.textContent = "fetching OSM for this view…";
+        try { await doFetch(false); }
+        catch (err) { toolStatus.textContent = "fetch failed: " + err.message; }
+      };
+
+      // ---- Reset to the committed default area (roadmap #7) ----
+      // A reliable escape hatch: reload the known-good Pham Hung seed without a
+      // live Overpass call. Same two-stage guard as Fetch so it never silently
+      // discards staged or un-uploaded (action="modify") edits.
+      document.getElementById("btn-reset").onclick = async () => {
+        const staged = Object.keys(pendingEdits).length;
+        if (staged && !confirm(
+          `${staged} staged (un-submitted) edit(s) will be discarded when you reset ` +
+          `to the default area. Continue?`)) return;
+        const doReset = async (force) => {
+          const resp = await fetch("/api/reset", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ force }),
+          }).then((r) => r.json());
+          if (resp.needsConfirm) {
+            if (!confirm(
+              `You edited ${resp.pendingModified} way(s) in this tool — current.osm still ` +
+              `marks them action="modify".\n\n` +
+              `The tool can't tell whether you've uploaded them in JOSM yet:\n` +
+              `  • Already uploaded in JOSM → safe to discard this local copy.\n` +
+              `  • Not uploaded yet → reset discards them (they are NOT in git).\n\n` +
+              `Reset to the default area anyway?`)) {
+              toolStatus.textContent = "reset cancelled — local edits kept (upload in JOSM first if needed)";
+              return;
+            }
+            return doReset(true);
+          }
+          if (resp.error) { toolStatus.textContent = "reset failed: " + resp.error; return; }
+          Object.keys(pendingEdits).forEach((k) => delete pendingEdits[k]);
+          refreshStaged();
+          curVersion = resp.version;
+          await reloadSources(resp.version);
+          map.flyTo({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, speed: 1.4 });
+          toolStatus.textContent = `reset to default area — ${resp.counts?.lanes ?? "?"} lanes`;
+        };
+        toolStatus.textContent = "resetting to default area…";
+        try { await doReset(false); }
+        catch (err) { toolStatus.textContent = "reset failed: " + err.message; }
+      };
+
+      // ---- Reload the local current.osm (roadmap follow-up) ----
+      // Round-trips JOSM edits in editor mode: after you Save current.osm from
+      // JOSM (e.g. a way split), re-render it here WITHOUT hitting Overpass — so a
+      // Fetch can't overwrite the local edit. Non-destructive (reads the file as
+      // is), so no guard; the HD geometry refreshes in the background.
+      document.getElementById("btn-reload").onclick = async () => {
+        toolStatus.textContent = "reloading current.osm…";
+        try {
+          const resp = await fetch("/api/rebuild-local", { method: "POST" }).then((r) => r.json());
+          if (resp.error) { toolStatus.textContent = "reload failed: " + resp.error; return; }
+          toolStatus.innerHTML =
+            `reloading local file — HD geometry refreshes here shortly ` +
+            `(rebuilding in the background).` +
+            (resp.pendingModified
+              ? `<br><span style="opacity:.6">${resp.pendingModified} way(s) marked ` +
+              `action="modify" in the file (upload in JOSM to publish).</span>`
+              : "");
+        } catch (err) { toolStatus.textContent = "reload failed: " + err.message; }
+      };
+
+      // ---- Mark uploaded: clear action="modify" markers after a JOSM upload ----
+      // A JOSM upload never clears these markers here (JOSM uploads from its own
+      // imported layer), so the overwrite guard keeps warning even once the edits
+      // are live in OSM. This tells the tool "I've uploaded them" and strips the
+      // markers, so fetch/reset stop nagging. Tags are untouched → no rebuild.
+      document.getElementById("btn-uploaded").onclick = async () => {
+        if (!confirm(
+          "Only after you've UPLOADED these edits in JOSM.\n\n" +
+          "This clears the action=\"modify\" markers in current.osm so the tool stops " +
+          "warning about them. It does NOT upload anything and does NOT change your tags.\n\n" +
+          "Clear the markers now?")) return;
+        toolStatus.textContent = "clearing modify markers…";
+        try {
+          const resp = await fetch("/api/clear-modified", { method: "POST" }).then((r) => r.json());
+          if (resp.error) { toolStatus.textContent = "clear failed: " + resp.error; return; }
+          toolStatus.textContent = resp.cleared
+            ? `cleared ${resp.cleared} modify marker(s) — fetch/reset won't warn about them now`
+            : "nothing to clear — no modify markers in current.osm";
+        } catch (err) { toolStatus.textContent = "clear failed: " + err.message; }
+      };
+
+      // ---- Submit changeset (plan step 3) + auto-open in JOSM (step 4) ----
+      document.getElementById("btn-submit").onclick = async () => {
+        const ids = Object.keys(pendingEdits);
+        if (!ids.length) return;
+        // Pre-flight: the whole point of Submit is the JOSM handoff (step 4). If
+        // JOSM isn't reachable, warn BEFORE applying — the edits would otherwise
+        // land in current.osm with nothing opening in JOSM to review/upload.
+        toolStatus.textContent = "checking JOSM…";
+        if (!(await josmReachable()) && !confirm(
+          "JOSM isn’t reachable — it may not be running, or Remote Control isn’t " +
+          "enabled.\n\n" +
+          "Submit hands your edits to JOSM to review and upload; without it, nothing " +
+          "will open there.\n\n" + JOSM_HELP + "\n\n" +
+          "Submit anyway? (edits are still written to live/current.osm — you can open " +
+          "that file directly in JOSM afterwards via File → Open.)")) {
+          toolStatus.textContent = "submit cancelled — JOSM not reachable (enable Remote Control)";
+          return;
+        }
+        toolStatus.textContent = `submitting ${ids.length} edit(s)…`;
+        try {
+          // server wants key -> tags; pendingEdits holds {kind,id,tags,orig}
+          const edits = Object.fromEntries(
+            Object.entries(pendingEdits).map(([k, e]) => [k, e.tags]));
+          const resp = await fetch("/api/changeset", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ edits }),
+          }).then((r) => r.json());
+          if (resp.error) { toolStatus.textContent = "submit failed: " + resp.error; return; }
+          const n = resp.changed ?? ids.length;
+          ids.forEach((k) => delete pendingEdits[k]);
+          refreshStaged();
+          // step 4: fire JOSM Remote Control /import immediately — current.osm is
+          // already written server-side, so we don't wait for the HD rebuild.
+          // Build the URL from the live origin — the port may not be 8097 (autoPort).
+          // new_layer=true opens a FRESH, isolated layer every submit: JOSM's
+          // /import always MERGES into the active layer, so without this,
+          // repeated submits pile up phantom "modified" ways in one shared
+          // layer and you'd upload edits you never made. A timestamped
+          // layer_name makes the newest (correct) layer easy to spot.
+          const fileUrl = `${window.location.origin}/live/current.osm`;
+          const layerName = `hdmap edit ${new Date().toLocaleTimeString()}`;
+          const importUrl =
+            `http://127.0.0.1:8111/import?new_layer=true` +
+            `&layer_name=${encodeURIComponent(layerName)}` +
+            `&url=${encodeURIComponent(fileUrl)}`;
+          fetch(importUrl, { mode: "no-cors" }).catch(() => { });
+          // the HD geometry refreshes on its own: the background rebuild bumps
+          // version.json and the live-sync poll reloads the layers. Don't block on it.
+          toolStatus.innerHTML =
+            `submitted ${n} edit(s) ✓ — opened a fresh JOSM layer ` +
+            `“${layerName}”. Review &amp; <b>Upload</b> that layer.` +
+            (resp.rebuilding
+              ? `<br><span style="opacity:.6">HD geometry refreshes here shortly ` +
+              `(rebuilding in the background — a big area takes ~a minute).</span>`
+              : `<br><span style="opacity:.6">(fresh layer each submit — ignore/close ` +
+              `older hdmap layers so you don't upload stale edits.)</span>`);
+        } catch (err) { toolStatus.textContent = "submit failed: " + err.message; }
+      };
+      refreshStaged(); // set initial button state
+
+      // ---- data-age indicator (plan roadmap #5-lite): show how stale the OSM
+      // data is; nudge a re-fetch before submitting. (JOSM still hard-blocks
+      // stale-version overwrites on upload — this is just an early heads-up.) ----
+      const dataAgeEl = document.getElementById("data-age");
+      const STALE_MS = 30 * 60 * 1000;
+      let lastFetchedAt = null;
+      const fmtAge = (ms) => {
+        const s = Math.max(0, Math.round(ms / 1000));
+        if (s < 60) return `${s}s`;
+        const m = Math.round(s / 60);
+        if (m < 60) return `${m}m`;
+        return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}m`;
+      };
+      const updateDataAge = (fetchedAt) => {
+        if (fetchedAt) lastFetchedAt = fetchedAt;
+        if (!lastFetchedAt) { dataAgeEl.textContent = ""; return; }
+        const age = Date.now() - lastFetchedAt, stale = age > STALE_MS;
+        dataAgeEl.textContent = `data fetched ${fmtAge(age)} ago` +
+          (stale ? " — re-fetch before submitting" : "");
+        dataAgeEl.classList.toggle("stale", stale);
+      };
+      setInterval(() => updateDataAge(), 15000); // tick the age text between polls
+
+      const poll = async () => {
+        try {
+          const info = await fetch(`data/version.json?t=${Date.now()}`).then((r) => r.json());
+          missed = 0;
+          updateDataAge(info.fetchedAt);
+          if (curVersion === null) {
+            curVersion = info.v; // first sight — sources already loaded
+            dot.style.background = "#2f9e5c";
+            txt.textContent = `live sync: on (${info.source || "?"})`;
+          } else if (info.v !== curVersion) {
+            curVersion = info.v;
+            await reloadSources(info.v);
+          }
+        } catch (_) {
+          if (++missed > 3) { dot.style.background = "#6b7280"; txt.textContent = "live sync: watcher offline"; }
+        }
+      };
+      poll();
+      setInterval(poll, 1500);
+    }
+    main();
+  </script>
+</body>
+
 </html>

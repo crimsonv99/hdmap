@@ -1,1 +1,11 @@
 node_modules/
+logs/
+
+# Working OSM file — seeded from the committed default; mutable, never committed.
+live/
+
+# Generated HD layers + stamps — rebuilt on startup by server.mjs (and by
+# generate.mjs). Derived from the seed, so they drift; don't track them.
+# The ONLY tracked data file is the committed default-area seed (default.osm).
+data/*
+!data/default.osm
