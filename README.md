@@ -95,9 +95,15 @@ Key pieces of logic:
 
 ## 2. Setup
 
+**Requirements**
+- **Node ≥ 18** — the backend uses global `fetch`, `AbortController`, and top-level
+  `await` (ESM; `package.json` has `"type": "module"`). Older Node will fail at startup.
+- **A modern browser** (the viewer uses MapLibre GL 5 / WebGL).
+- **JOSM** — only for the editing flows (§4/§5), see the note below.
+
 ```bash
 cd hdmap
-npm install          # installs osm2streets-js (the WASM engine)
+npm install          # installs osm2streets-js (the WASM engine) + @xmldom/xmldom
 ```
 
 > Everything must be served over `http://` — opening `index.html` as a `file://`
@@ -212,7 +218,7 @@ Split handoffs — the tool probes for it and warns if it's off (see Step 3).
 ```
 
 ```bash
-node hdmap/server.mjs   # viewer + /api/{way,node,fetch,reset,rebuild-local,clear-modified,changeset}
+node server.mjs         # viewer + /api/{way,node,fetch,reset,rebuild-local,clear-modified,changeset}
 # open http://localhost:8097/index.html   (or the autoPort port from launch.json)
 ```
 
