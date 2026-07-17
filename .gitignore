@@ -1,6 +1,10 @@
 node_modules/
 logs/
 
+# Secrets — never commit. Contains the GitHub token used for pushing.
+.env
+.env.*
+
 # Working OSM file — seeded from the committed default; mutable, never committed.
 live/
 
