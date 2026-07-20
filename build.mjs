@@ -5,6 +5,7 @@ import init, { JsStreetNetwork } from "osm2streets-js/osm2streets_js.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { DOMParser } from "@xmldom/xmldom";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 
@@ -84,9 +85,76 @@ const boundsOf = (features) => {
   return Number.isFinite(minX) ? [minX, minY, maxX, maxY] : null;
 };
 
+// ---- buildings (3D context extrusions — see plan.md §5 Phase 2) ------------
+// osm2streets is a STREETS engine — it ignores building ways entirely. So we
+// parse them straight from the OSM XML and polygonize the closed ways ourselves,
+// attaching an INFERRED height (estimated, not survey — same honesty as our
+// inferred lane widths):
+//   height tag (m)  ->  building:levels x LEVEL_M  ->  DEFAULT_HEIGHT_M
+// plus an optional base from min_height / building:min_level. Multipolygon
+// building relations (courtyards/holes) are skipped for now — rare, and closed
+// ways cover the overwhelming majority.
+const LEVEL_M = 3;          // assumed storey height when only levels are tagged
+const DEFAULT_HEIGHT_M = 6; // ~2 storeys, when a building has no height signal
+const parseMeters = (s) => {
+  if (s == null) return null;
+  const m = String(s).match(/-?\d+(?:\.\d+)?/); // "12", "12 m", "12.5m"
+  return m ? parseFloat(m[0]) : null;
+};
+export function buildingsFromOsm(osmXml) {
+  const doc = new DOMParser().parseFromString(osmXml, "text/xml");
+  // node id -> [lon, lat]
+  const nodes = new Map();
+  const nodeEls = doc.getElementsByTagName("node");
+  for (let i = 0; i < nodeEls.length; i++) {
+    const n = nodeEls[i];
+    const id = n.getAttribute("id");
+    const lon = parseFloat(n.getAttribute("lon")), lat = parseFloat(n.getAttribute("lat"));
+    if (id && Number.isFinite(lon) && Number.isFinite(lat)) nodes.set(id, [lon, lat]);
+  }
+  const features = [];
+  const wayEls = doc.getElementsByTagName("way");
+  for (let i = 0; i < wayEls.length; i++) {
+    const w = wayEls[i];
+    const tags = {};
+    const tagEls = w.getElementsByTagName("tag");
+    for (let j = 0; j < tagEls.length; j++)
+      tags[tagEls[j].getAttribute("k")] = tagEls[j].getAttribute("v");
+    const isBuilding =
+      (tags.building && tags.building !== "no") ||
+      (tags["building:part"] && tags["building:part"] !== "no");
+    if (!isBuilding) continue;
+    const ndEls = w.getElementsByTagName("nd");
+    const ring = [];
+    for (let j = 0; j < ndEls.length; j++) {
+      const p = nodes.get(ndEls[j].getAttribute("ref"));
+      if (p) ring.push(p);
+    }
+    if (ring.length < 3) continue; // not enough points for an area
+    const first = ring[0], last = ring[ring.length - 1];
+    if (first[0] !== last[0] || first[1] !== last[1]) ring.push([first[0], first[1]]); // close it
+    if (ring.length < 4) continue;
+    const lvl = parseMeters(tags["building:levels"]);
+    const minLvl = parseMeters(tags["building:min_level"]);
+    const height = parseMeters(tags.height) ?? (lvl != null ? lvl * LEVEL_M : null) ?? DEFAULT_HEIGHT_M;
+    const base = parseMeters(tags.min_height) ?? (minLvl != null ? minLvl * LEVEL_M : 0);
+    features.push({
+      type: "Feature",
+      geometry: { type: "Polygon", coordinates: [ring] },
+      properties: {
+        osm_way_id: w.getAttribute("id"),
+        height, base,
+        name: tags.name ?? null,
+        levels: tags["building:levels"] ?? null,
+      },
+    });
+  }
+  return { type: "FeatureCollection", features };
+}
+
 /**
- * Turn OSM XML into the three HD layers plus a suggested map centre.
- * Returns { lanes, markings, intersections, center, counts }.
+ * Turn OSM XML into the HD layers plus a suggested map centre.
+ * Returns { lanes, markings, intersections, turnArrows, buildings, center, counts }.
  */
 export function osmToLayers(osmXml) {
   const net = new JsStreetNetwork(osmXml, "", IMPORT_OPTIONS);
@@ -189,6 +257,8 @@ export function osmToLayers(osmXml) {
     })),
   };
 
+  const buildings = buildingsFromOsm(osmXml);
+
   const b = boundsOf(lanes.features);
   const center = b ? [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2] : null;
 
@@ -197,12 +267,14 @@ export function osmToLayers(osmXml) {
     markings,
     intersections,
     turnArrows,
+    buildings,
     center,
     counts: {
       lanes: lanes.features.length,
       markings: markings.features.length,
       intersections: intersections.features.length,
       turnArrows: turnArrows.features.length,
+      buildings: buildings.features.length,
     },
   };
 }

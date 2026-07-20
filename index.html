@@ -526,6 +526,10 @@
       <span style="opacity:.6">(teal=left, <span style="color:#c9772e">orange=right</span>)</span></label>
     <label><input type="checkbox" id="t-sat" /><span class="sw" style="background:#3b6ea5"></span> Satellite
       imagery</label>
+    <label><input type="checkbox" id="t-bldg" checked /><span class="sw" style="background:#bcb6a6"></span>
+      Buildings (3D)</label>
+    <label><input type="checkbox" id="t-3d" /><span class="sw" style="background:#6a8caf"></span> 3D view
+      (tilt)</label>
     <label style="opacity:.85">HD opacity
       <input type="range" id="hd-op" min="0" max="100" value="100" style="flex:1;min-width:0" />
     </label>
@@ -598,6 +602,8 @@
       const turnArrowsGeojson = await fetch("data/turn_arrows.geojson")
         .then((r) => r.json()).catch(() => ({ type: "FeatureCollection", features: [] }));
       const intersectionsGeojson = await fetch("data/intersections.geojson")
+        .then((r) => r.json()).catch(() => ({ type: "FeatureCollection", features: [] }));
+      const buildingsGeojson = await fetch("data/buildings.geojson")
         .then((r) => r.json()).catch(() => ({ type: "FeatureCollection", features: [] }));
       let currentLanes = lanesGeojson; // latest lane features (updated on live reload)
       let currentIntersections = intersectionsGeojson; // kept for node (intersection) editing
@@ -764,6 +770,20 @@
             "icon-allow-overlap": true, "icon-ignore-placement": true
           }
         },
+        // buildings — 3D context extrusions (plan.md §5 Phase 2). Height is
+        // inferred in build.mjs (height tag → building:levels × 3 m → default),
+        // so it reads as HD but is estimated, not survey. Flat when top-down;
+        // rises once the "3D view" tilt is on. Drawn after the road surface so a
+        // building never bleeds under the tarmac, and before the overlays below.
+        {
+          id: "buildings-3d", type: "fill-extrusion", source: "buildings",
+          paint: {
+            "fill-extrusion-color": "#bcb6a6",
+            "fill-extrusion-height": ["coalesce", ["get", "height"], 6],
+            "fill-extrusion-base": ["coalesce", ["get", "base"], 0],
+            "fill-extrusion-opacity": 0.85,
+          }
+        },
         // staged edits (pending, not yet submitted) — magenta tint so you can
         // see which ways you've changed before submitting the changeset
         {
@@ -817,9 +837,21 @@
             "hl-select": { type: "geojson", data: { type: "FeatureCollection", features: [] } },
             "staged": { type: "geojson", data: { type: "FeatureCollection", features: [] } },
             "turn-arrows": { type: "geojson", data: turnArrowsGeojson },
+            buildings: { type: "geojson", data: buildingsGeojson },
           },
           layers: styleLayers,
+          // directional light for building-extrusion shading (anchor:"map" so the
+          // shading rotates with the scene, reading as real sun rather than a flat
+          // tint). See plan.md §5 Phase 1.
+          light: { anchor: "map", color: "#ffffff", intensity: 0.4, position: [1.2, 210, 30] },
+          // soft daytime sky so a tilted horizon reads as a scene, not a void.
+          sky: {
+            "sky-color": "#9ec5f0", "sky-horizon-blend": 0.6,
+            "horizon-color": "#dce6ec", "horizon-fog-blend": 0.6,
+            "fog-color": "#e7ecdb", "fog-ground-blend": 0.2, "atmosphere-blend": 0.5,
+          },
         },
+        maxPitch: 80, // allow tilt for 2.5D (dragRotate/touchPitch on by default)
       });
 
       map.addControl(new maplibregl.NavigationControl(), "top-right");
@@ -960,6 +992,13 @@
       bind("t-mark", "markings", "markings-hi");
       bind("t-turn", "turn-left", "turn-right", "turn-arrows",
         "turn-left-hi", "turn-right-hi", "turn-arrows-hi");
+      bind("t-bldg", "buildings-3d");
+
+      // 3D view: tilt the camera (buildings/bridges rise once pitched). Off =
+      // today's top-down. dragRotate/touchPitch stay live for manual control.
+      document.getElementById("t-3d").addEventListener("change", (e) => {
+        map.easeTo({ pitch: e.target.checked ? 55 : 0, duration: 600 });
+      });
 
       // satellite basemap toggle + HD-opacity slider (fade polygons to trace imagery)
       document.getElementById("t-sat").addEventListener("change", (e) => {
@@ -1052,16 +1091,18 @@
       let missed = 0;
 
       const reloadSources = async (v) => {
-        const [ln, mk, it, ta] = await Promise.all([
+        const [ln, mk, it, ta, bd] = await Promise.all([
           fetch(`data/lanes.geojson?v=${v}`).then((r) => r.json()),
           fetch(`data/markings.geojson?v=${v}`).then((r) => r.json()),
           fetch(`data/intersections.geojson?v=${v}`).then((r) => r.json()),
           fetch(`data/turn_arrows.geojson?v=${v}`).then((r) => r.json()).catch(() => null),
+          fetch(`data/buildings.geojson?v=${v}`).then((r) => r.json()).catch(() => null),
         ]);
         map.getSource("lanes").setData(ln);
         map.getSource("markings").setData(mk);
         map.getSource("intersections").setData(it);
         if (ta) map.getSource("turn-arrows").setData(ta);
+        if (bd) map.getSource("buildings")?.setData(bd);
         currentLanes = ln;
         currentIntersections = it;
         reselect(); // re-highlight the selected way/node after reload

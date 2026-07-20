@@ -34,35 +34,35 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked/needs dec
 
 ## Phase 1 — MapLibre 2.5D: pitch + sky + light  *(index.html only, zero data work)*
 
-- [ ] **1.1 Enable camera tilt/rotate.**
+- [x] **1.1 Enable camera tilt/rotate.**
   - `dragRotate`/`touchPitch` on; sensible `maxPitch`; keep the existing `f`-to-frame key.
   - Files: `index.html` (map init ~L797). Accept: can tilt/rotate; 2D still default-on load.
-- [ ] **1.2 Add a `sky` layer + directional light** for depth shading.
+- [x] **1.2 Add a `sky` layer + directional light** for depth shading.
   - Files: `index.html` (style `layers`/`light`). Accept: horizon + subtle shading, no
     perf regression at the default Pham Hung view.
-- [ ] **1.3 Add a "3D" / pitch toggle button** in `#panel` (default off = today's top-down).
+- [x] **1.3 Add a "3D" / pitch toggle button** in `#panel` (default off = today's top-down).
   - Files: `index.html` (`#panel`, `bind` helpers ~L928). Accept: toggle flips pitch and
     persists during pan/zoom.
-- [ ] **1.4 Verify editor still works when pitched** (hover/select/click, popups).
+- [x] **1.4 Verify editor still works when pitched** (hover/select/click, popups).
   - Accept: picking + tag editor unaffected at pitch>0.
 
 ---
 
 ## Phase 2 — Building extrusions  *(context win, low risk)*
 
-- [ ] **2.1 Extend Overpass query to buildings.**
+- [x] **2.1 Extend Overpass query to buildings.**
   - Add `building` to the query (currently `way["highway"]` only, `generate.mjs` ~L25);
     thread through `server.mjs` fetch path too.
   - Files: `generate.mjs`, `server.mjs`. Accept: raw OSM now contains building ways.
-- [ ] **2.2 Emit a `buildings.geojson` layer from `build.mjs`.**
+- [x] **2.2 Emit a `buildings.geojson` layer from `build.mjs`.**
   - Polygonize building ways; compute `height` = `height` tag → `building:levels × 3 m`
     → default (e.g. 6 m). Emit `min_height`/`base` if present.
   - Files: `build.mjs`. Accept: new `data/buildings.geojson` with per-feature height.
-- [ ] **2.3 Render buildings as `fill-extrusion`.**
+- [x] **2.3 Render buildings as `fill-extrusion`.**
   - New source + `fill-extrusion` layer under the HD road band; muted palette; respects
     the `sky`/light from Phase 1.
   - Files: `index.html`. Accept: buildings rise in 3D; roads still read on top/clearly.
-- [ ] **2.4 Wire building visibility into the layer toggles + HD-opacity slider.**
+- [x] **2.4 Wire building visibility into the layer toggles + HD-opacity slider.**
   - Files: `index.html` (`bind`, `HD_OPACITY` ~L969). Accept: buildings toggle/fade like
     other layers.
 

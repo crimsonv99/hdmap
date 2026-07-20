@@ -283,7 +283,8 @@ const server = createServer((req, res) => {
         const [w, s, e, n] = bbox;
         // [timeout:60] = explicit server-side budget; overpassFetch tries mirrors
         // in turn so one overloaded instance (504) doesn't fail the whole fetch.
-        const query = `[timeout:60][bbox:${s},${w},${n},${e}];(way["highway"];>;);out meta;`;
+        // buildings included for 3D context extrusions (build.mjs polygonizes them)
+        const query = `[timeout:60][bbox:${s},${w},${n},${e}];(way["highway"];way["building"];>;);out meta;`;
         const osmXml = await overpassFetch(query);
         killBgRebuild("fetch"); // a stale changeset rebuild must not clobber this area
         writeFileSync(join(dataDir, "raw.osm"), osmXml);

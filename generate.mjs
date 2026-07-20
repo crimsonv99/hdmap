@@ -23,7 +23,9 @@ const bbox =
 
 try {
   console.log(`[1/3] Fetching OSM data from Overpass for bbox=${bbox} ...`);
-  const query = `[bbox:${bbox}];(way["highway"];>;);out meta;`;
+  // buildings come along for 3D context extrusions (osm2streets ignores them; we
+  // polygonize them ourselves in build.mjs). `>` recurses to every way's nodes.
+  const query = `[bbox:${bbox}];(way["highway"];way["building"];>;);out meta;`;
   let res;
   try {
     res = await fetch("https://overpass-api.de/api/interpreter", {
@@ -52,13 +54,14 @@ try {
 
   console.log("[2/3] Running osm2streets (WASM) ...");
   await initEngine();
-  const { lanes, markings, intersections, turnArrows, center, counts } = osmToLayers(osmXml);
+  const { lanes, markings, intersections, turnArrows, buildings, center, counts } = osmToLayers(osmXml);
 
   console.log("[3/3] Writing GeoJSON ...");
   writeFileSync(join(dataDir, "lanes.geojson"), JSON.stringify(lanes));
   writeFileSync(join(dataDir, "markings.geojson"), JSON.stringify(markings));
   writeFileSync(join(dataDir, "intersections.geojson"), JSON.stringify(intersections));
   writeFileSync(join(dataDir, "turn_arrows.geojson"), JSON.stringify(turnArrows));
+  writeFileSync(join(dataDir, "buildings.geojson"), JSON.stringify(buildings));
   for (const [k, v] of Object.entries(counts))
     console.log(`      ${k.padEnd(14)} ${v} features`);
 
