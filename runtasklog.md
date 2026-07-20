@@ -24,6 +24,38 @@ Plan: [`plan.md`](plan.md) §5 · Task breakdown: [`tasks.md`](tasks.md)
 
 ---
 
+## 2026-07-20 — Decouple buildings into an independent layer + NUL-byte fix
+- Tasks: Phase 2 refinement (separate building lifecycle)
+- Why: "Fetch OSM data" replaces the whole dataset; when the public Overpass returned
+  sparse/partial road data, osm2streets built ~0 lanes and the seed's roads vanished
+  (buildings still came through). Root-caused it — an injection test proved building ways
+  do NOT affect road-building (default.osm: 36,117 lanes with or without 600 injected
+  buildings). So the fix is architectural: make buildings their own layer.
+- Files: `server.mjs`, `rebuild.mjs`, `watch.mjs`, `index.html`
+- Changes:
+  - **server.mjs** — reverted `/api/fetch` road query to highway-only; added
+    `POST /api/buildings {bbox}` that pulls buildings only, writes `data/buildings.geojson`,
+    and touches nothing else (no current.osm, no rebuild, no version bump). Imports
+    `buildingsFromOsm`.
+  - **rebuild.mjs / watch.mjs** — no longer write `buildings.geojson`; the road rebuild
+    leaves the buildings layer alone, so fetching/resetting roads never wipes buildings.
+  - **index.html** — new "⤓ Fetch buildings (this view)" button + handler: POSTs the view
+    bbox to `/api/buildings`, then refreshes only the `buildings` source in place (roads
+    untouched). Also fixed a pre-existing stray **NUL byte** in the `NONE` filter sentinel
+    (line ~968) that made the whole file read as binary to grep/git — replaced with a
+    space (same "matches nothing" semantics).
+- Verified:
+  - `node --check` clean on all 5 `.mjs` + the extracted inline script.
+  - Restarted server on the rich seed: startup road rebuild **preserved** a sentinel
+    `buildings.geojson` (3 features survived) → confirms road rebuild no longer wipes it;
+    roads intact (36,117 lanes).
+  - `POST /api/buildings` live: Overpass returned 230 buildings for a Pham Hung bbox,
+    written independently. `{"ok":true,"count":230}`.
+- Open / follow-ups:
+  - Road fetch for a NEW area still depends on Overpass health (unchanged); the seed
+    remains the reliable road demo.
+  - Phase 3 (elevated bridges) still not started.
+
 ## 2026-07-17 — Phase 1 (2.5D camera) + Phase 2 (building extrusions)
 - Tasks: 1.1, 1.2, 1.3, 1.4, 2.1, 2.2, 2.3, 2.4
 - Files: `build.mjs`, `generate.mjs`, `rebuild.mjs`, `watch.mjs`, `server.mjs`, `index.html`

@@ -293,6 +293,11 @@
       color: #cfe0ff;
     }
 
+    #btn-fetch-bldg {
+      background: #2b2636;
+      color: #d9cdea;
+    }
+
     #btn-submit {
       background: #3a3f4b;
       color: #7c8496;
@@ -541,6 +546,7 @@
     </div>
     <div id="tools">
       <button id="btn-fetch">⤓ Fetch OSM data (this view)</button>
+      <button id="btn-fetch-bldg">⤓ Fetch buildings (this view)</button>
       <button id="btn-reset">⌂ Reset to default area</button>
       <button id="btn-reload">↻ Reload local file (after JOSM save)</button>
       <button id="btn-uploaded">✓ Mark uploaded (clear modify flags)</button>
@@ -965,7 +971,7 @@
       };
       // match every lane feature belonging to one OSM way (osm_way_ids is a
       // JSON-array string like "[123]" or "[123,456]")
-      const NONE = ["==", ["get", "osm_way_ids"], " "];
+      const NONE = ["==", ["get", "osm_way_ids"], " "];
       const wayFilter = (id) =>
         id == null ? NONE : ["any",
           ["==", ["get", "osm_way_ids"], `[${id}]`],
@@ -1611,6 +1617,31 @@
         toolStatus.textContent = "fetching OSM for this view…";
         try { await doFetch(false); }
         catch (err) { toolStatus.textContent = "fetch failed: " + err.message; }
+      };
+
+      // ---- Fetch BUILDINGS for the current view (independent layer) ----
+      // Buildings are decoupled from roads: this hits /api/buildings, which pulls
+      // buildings only and rewrites data/buildings.geojson WITHOUT touching the
+      // road network / current.osm. We then refresh just the buildings source in
+      // place, so the seed's roads stay put. No staged-edit guard needed — this
+      // never writes current.osm.
+      document.getElementById("btn-fetch-bldg").onclick = async () => {
+        const b = map.getBounds();
+        const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+        toolStatus.textContent = "fetching buildings for this view…";
+        try {
+          const resp = await fetch("/api/buildings", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bbox }),
+          }).then((r) => r.json());
+          if (resp.error) { toolStatus.textContent = "buildings fetch failed: " + resp.error; return; }
+          const bd = await fetch(`data/buildings.geojson?v=${Date.now()}`).then((r) => r.json());
+          map.getSource("buildings")?.setData(bd);
+          // make sure the layer is on so the result is visible
+          document.getElementById("t-bldg").checked = true;
+          if (map.getLayer("buildings-3d")) map.setLayoutProperty("buildings-3d", "visibility", "visible");
+          toolStatus.textContent = `buildings loaded — ${resp.count} in view`;
+        } catch (err) { toolStatus.textContent = "buildings fetch failed: " + err.message; }
       };
 
       // ---- Reset to the committed default area (roadmap #7) ----

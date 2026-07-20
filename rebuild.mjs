@@ -21,12 +21,14 @@ const osmFile = join(__dir, "live", "current.osm");
 // so the viewer never reloads a half-written layer set — it only reacts to `v`.
 export function rebuildFiles(source, { fetchedAt } = {}) {
   const xml = readFileSync(osmFile, "utf8");
-  const { lanes, markings, intersections, turnArrows, buildings, center, counts } = osmToLayers(xml);
+  // buildings are an independent layer (POST /api/buildings) — the road rebuild
+  // deliberately does NOT write buildings.geojson, so fetching/resetting roads
+  // never wipes buildings the user pulled separately.
+  const { lanes, markings, intersections, turnArrows, center, counts } = osmToLayers(xml);
   writeFileSync(join(dataDir, "lanes.geojson"), JSON.stringify(lanes));
   writeFileSync(join(dataDir, "markings.geojson"), JSON.stringify(markings));
   writeFileSync(join(dataDir, "intersections.geojson"), JSON.stringify(intersections));
   writeFileSync(join(dataDir, "turn_arrows.geojson"), JSON.stringify(turnArrows));
-  writeFileSync(join(dataDir, "buildings.geojson"), JSON.stringify(buildings));
   if (center) {
     let meta = {};
     try { meta = JSON.parse(readFileSync(join(dataDir, "meta.json"), "utf8")); } catch {}

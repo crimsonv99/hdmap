@@ -64,7 +64,17 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked/needs dec
   - Files: `index.html`. Accept: buildings rise in 3D; roads still read on top/clearly.
 - [x] **2.4 Wire building visibility into the layer toggles + HD-opacity slider.**
   - Files: `index.html` (`bind`, `HD_OPACITY` ~L969). Accept: buildings toggle/fade like
-    other layers.
+    other layers. (Toggle only — deliberately kept out of the HD-opacity/tracing slider.)
+- [x] **2.5 Decouple buildings into an INDEPENDENT layer.**
+  - Buildings never go through osm2streets, so give them their own lifecycle:
+    `POST /api/buildings` (buildings-only fetch → writes `buildings.geojson`, touches
+    nothing else); road rebuild no longer writes `buildings.geojson`; road fetch is
+    highway-only again. New "Fetch buildings (this view)" button refreshes only the
+    buildings source. Rationale: a road fetch returning sparse Overpass data must never
+    wipe the road seed *or* the buildings.
+  - Files: `server.mjs`, `rebuild.mjs`, `watch.mjs`, `index.html`.
+  - Accept: fetching buildings keeps roads; resetting/fetching roads keeps buildings.
+    Verified (sentinel survives road rebuild; live fetch returned 230 buildings).
 
 ---
 

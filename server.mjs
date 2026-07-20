@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, extname, normalize } from "node:path";
 import { fork } from "node:child_process";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
-import { initEngine } from "./build.mjs";
+import { initEngine, buildingsFromOsm } from "./build.mjs";
 import { rebuildFiles } from "./rebuild.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -283,14 +283,43 @@ const server = createServer((req, res) => {
         const [w, s, e, n] = bbox;
         // [timeout:60] = explicit server-side budget; overpassFetch tries mirrors
         // in turn so one overloaded instance (504) doesn't fail the whole fetch.
-        // buildings included for 3D context extrusions (build.mjs polygonizes them)
-        const query = `[timeout:60][bbox:${s},${w},${n},${e}];(way["highway"];way["building"];>;);out meta;`;
+        // highway-only: roads go through osm2streets. Buildings are a SEPARATE,
+        // independent layer (POST /api/buildings) so a road fetch never touches
+        // them and vice-versa.
+        const query = `[timeout:60][bbox:${s},${w},${n},${e}];(way["highway"];>;);out meta;`;
         const osmXml = await overpassFetch(query);
         killBgRebuild("fetch"); // a stale changeset rebuild must not clobber this area
         writeFileSync(join(dataDir, "raw.osm"), osmXml);
         writeFileSync(osmFile, osmXml);
         const { v, counts } = rebuild("overpass-fetch", { fetchedAt: Date.now() });
         return sendJSON(res, 200, { ok: true, version: v, counts });
+      } catch (e) { return sendJSON(res, 500, { error: e.message }); }
+    });
+    return;
+  }
+
+  // --- API: fetch BUILDINGS for a bbox as an independent layer ---------------
+  // Buildings never go through osm2streets (we polygonize them straight from OSM
+  // XML), so they are decoupled from the road pipeline: this pulls buildings only,
+  // writes data/buildings.geojson, and touches NOTHING else — not current.osm, not
+  // the road layers, not version.json. So you can load buildings for a view while
+  // keeping the seed's road network, and a road fetch/reset won't wipe buildings.
+  if (req.method === "POST" && url.pathname === "/api/buildings") {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", async () => {
+      try {
+        const { bbox } = JSON.parse(body || "{}");
+        if (!Array.isArray(bbox) || bbox.length !== 4)
+          return sendJSON(res, 400, { error: "need { bbox: [w, s, e, n] }" });
+        const [w, s, e, n] = bbox;
+        log("buildings-fetch", { bbox });
+        const query = `[timeout:60][bbox:${s},${w},${n},${e}];(way["building"];>;);out;`;
+        const osmXml = await overpassFetch(query);
+        const fc = buildingsFromOsm(osmXml);
+        writeFileSync(join(dataDir, "buildings.geojson"), JSON.stringify(fc));
+        log("buildings-fetch-done", { count: fc.features.length });
+        return sendJSON(res, 200, { ok: true, count: fc.features.length });
       } catch (e) { return sendJSON(res, 500, { error: e.message }); }
     });
     return;

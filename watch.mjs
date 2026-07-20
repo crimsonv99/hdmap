@@ -45,12 +45,13 @@ async function rebuild(reason) {
     lastSig = sig;
 
     const t0 = Date.now();
-    const { lanes, markings, intersections, turnArrows, buildings, center, counts } = osmToLayers(xml);
+    // buildings are an independent layer (POST /api/buildings); the road rebuild
+    // does not write buildings.geojson (see rebuild.mjs).
+    const { lanes, markings, intersections, turnArrows, center, counts } = osmToLayers(xml);
     writeFileSync(join(dataDir, "lanes.geojson"), JSON.stringify(lanes));
     writeFileSync(join(dataDir, "markings.geojson"), JSON.stringify(markings));
     writeFileSync(join(dataDir, "intersections.geojson"), JSON.stringify(intersections));
     writeFileSync(join(dataDir, "turn_arrows.geojson"), JSON.stringify(turnArrows));
-    writeFileSync(join(dataDir, "buildings.geojson"), JSON.stringify(buildings));
     if (center) {
       // keep bbox from existing meta if present; only refresh center hint
       let meta = { bbox: null };
