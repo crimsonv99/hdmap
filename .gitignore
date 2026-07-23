@@ -1,0 +1,18 @@
+# Baker intermediates — big, regenerable. Never commit.
+build/
+node_modules/
+.DS_Store
+
+# Not needed by the hosted city viewer (index.html uses ./tiles):
+#  - the single PMTiles archive (regenerable source for the tiles)
+#  - the original single-district GeoJSON demo data
+data/hanoi.pmtiles
+data/lanes.geojson
+data/markings.geojson
+data/intersections.geojson
+data/turn_arrows.geojson
+data/buildings.geojson
+data/meta.json
+
+# The city map is served from ./tiles (uncompressed MVT) + data/hanoi-meta.json,
+# both of which ARE committed so the site runs on GitHub Pages with no server.
