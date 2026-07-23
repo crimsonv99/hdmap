@@ -76,6 +76,48 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked/needs dec
   - Accept: fetching buildings keeps roads; resetting/fetching roads keeps buildings.
     Verified (sentinel survives road rebuild; live fetch returned 230 buildings).
 
+- [x] **2.6 Click-to-edit a building's height (m), like the road editor.**
+  - Reality: ~98% of OSM buildings have no `height`/`building:levels`, so they all
+    fall to the 6 m default and read as a uniform slab. Fix = let the user set a real
+    height per building. Buildings are the INDEPENDENT layer (not in current.osm / the
+    changeset), so this is a direct edit, not a staged changeset:
+    - Click a building → editor opens with height-relevant tags (`height`,
+      `building:levels`, `min_height`, `building:min_level`, `building`, `name`).
+      Roads win when a lane is also under the cursor.
+    - "Apply height" updates the extrusion immediately (client geojson + `setData`)
+      and persists via `POST /api/building`, which patches `data/buildings.geojson`
+      only — no osm2streets rebuild, no version bump, no JOSM changeset.
+    - Gold `buildings-hi` fill-extrusion marks the selected building (via `setFilter`).
+    - The control panel is split into **Road / Building / View** sections.
+  - Files: `build.mjs` (carry `building`/`min_level` props), `server.mjs`
+    (`POST /api/building`), `index.html` (panel sections, building pick/hover/highlight,
+    building branch in `openEditor` + `applyBuilding`).
+  - Accept: click a building, set height, see it rise; value survives reload; roads
+    and the changeset flow are untouched. Verified: `/api/building` round-trip
+    (6 m → 42 m persisted → reverted); inline script `node --check` clean.
+
+- [x] **2.7 Bulk tag update from a CSV (by id → JOSM), road & building separated.**
+  - Instead of one-by-one edits, feed a CSV of `id` + tag columns. The server
+    fetches EXACTLY those elements from Overpass BY ID (not a bbox), merges the
+    tags (blank cell = unchanged), marks `action="modify"`, and writes a per-kind
+    file so road and building runs never conflict:
+    `live/bulk-road.osm` / `live/bulk-building.osm`. Each opens its own fresh JOSM
+    layer to review + upload. Building bulk also upserts `data/buildings.geojson`
+    so the 3D heights update live.
+  - CSV: header `id` (+ optional `type`=way|node for roads) and one column per tag.
+  - Files: `server.mjs` (`POST /api/bulk`, `mergeTags`), `index.html` (Batch tab,
+    `parseCSV`/`csvToRows`, `runBulk`). Accept: a CSV row updates the right element
+    and lands in JOSM; roads/buildings stay in separate files. Verified live
+    (building 463580599→h57; road 116432666→maxspeed50).
+
+- [x] **2.8 Import a boundary GeoJSON and fetch within it (not the viewport).**
+  - Load a boundary `.geojson`; road/building fetch pulls strictly inside the
+    polygon via Overpass `(poly:"…")` instead of the map window. Boundary drawn on
+    the map (dashed cyan); map fits to it; big rings decimated to ~500 pts.
+  - Files: `server.mjs` (`poly` on `/api/fetch` + `/api/buildings`, `polyString`),
+    `index.html` (Batch tab, `ringFromGeojson`, boundary source/layer).
+  - Accept: fetch respects the boundary. Verified live (triangle → 45 buildings).
+
 ---
 
 ## Phase 3 — Elevated roads (bridges/tunnels)  *(EXPERIMENTAL — the hard tier)*

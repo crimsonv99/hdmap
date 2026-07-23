@@ -39,6 +39,50 @@
       font-weight: 600;
     }
 
+    /* ---- minimize: collapse the panel to just its header row ---- */
+    #panel-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #panel-head h1 {
+      flex: 1;
+      min-width: 0;
+      margin: 0 0 8px;
+    }
+
+    #panel-min {
+      flex: 0 0 auto;
+      width: 24px;
+      height: 22px;
+      margin-bottom: 8px;
+      padding: 0;
+      line-height: 1;
+      font-size: 12px;
+      background: none;
+      border: 1px solid rgba(255, 255, 255, .18);
+      border-radius: 6px;
+      color: #cdd6e2;
+      cursor: pointer;
+    }
+
+    #panel-min:hover {
+      border-color: #4a6cff;
+      color: #fff;
+    }
+
+    /* hide everything except the header row */
+    #panel.min>*:not(#panel-head) { display: none; }
+
+    #panel.min {
+      min-width: 0;
+      padding: 8px 10px;
+    }
+
+    #panel.min #panel-head h1,
+    #panel.min #panel-min { margin-bottom: 0; }
+
     #panel label {
       display: flex;
       align-items: center;
@@ -46,6 +90,55 @@
       margin: 4px 0;
       cursor: pointer;
     }
+
+    /* switchable Road / Building tabs (keep the panel compact) */
+    #panel .tabs {
+      display: flex;
+      gap: 4px;
+      margin: 12px 0 10px;
+    }
+    #panel .tab {
+      flex: 1;
+      background: #1b2130;
+      color: #9aa4b2;
+      border: 1px solid rgba(255, 255, 255, .10);
+      border-radius: 7px;
+      padding: 7px 0;
+      font: 700 12px system-ui, sans-serif;
+      letter-spacing: .04em;
+      cursor: pointer;
+    }
+    #panel .tab.active {
+      background: #2b3550;
+      color: #fff;
+      border-color: #4a6cff;
+    }
+    #panel .tabpane[hidden] { display: none; }
+
+    /* Batch tab: grouped sections + file-picker buttons */
+    #panel .bsec { margin: 10px 0; padding: 8px 9px; background: #161b27; border: 1px solid rgba(255, 255, 255, .08); border-radius: 8px; }
+    #panel .bsec-hd { font: 700 11px system-ui, sans-serif; letter-spacing: .05em; text-transform: uppercase; color: #c7d0dc; margin-bottom: 4px; }
+    #panel .filebtn { display: inline-block; margin-top: 6px; background: #1b2130; color: #cdd5df; border: 1px dashed rgba(255, 255, 255, .22); border-radius: 7px; padding: 6px 10px; font: 600 12px system-ui, sans-serif; cursor: pointer; }
+    #panel .filebtn:hover { border-color: #4a6cff; color: #fff; }
+    #panel code { background: rgba(255, 255, 255, .08); border-radius: 4px; padding: 0 3px; font-size: 11px; }
+    #panel button:disabled { opacity: .45; cursor: not-allowed; }
+    /* imported-boundary feature list (multi-feature GeoJSON) */
+    #panel .bnd-list { max-height: 150px; overflow-y: auto; margin: 6px 0 0; border: 1px solid rgba(255, 255, 255, .08); border-radius: 6px; }
+    #panel .bnd-list:empty { display: none; }
+    #panel .bnd-row { display: flex; align-items: center; gap: 6px; padding: 3px 7px; font: 400 11px system-ui, sans-serif; color: #c7d0dc; border-top: 1px solid rgba(255, 255, 255, .05); }
+    #panel .bnd-row:first-child { border-top: 0; }
+    #panel .bnd-row:hover { background: rgba(74, 108, 255, .12); }
+    #panel .bnd-row input { margin: 0; }
+    #panel .bnd-row .bnd-lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+    #panel .bnd-row .bnd-lbl:hover { color: #fff; text-decoration: underline; }
+    #panel .bnd-row.hidden { display: none; }
+    /* Select-all / deselect-all + id search for the boundary list */
+    #panel .bnd-ctl { display: none; align-items: center; gap: 6px; margin: 6px 0 0; }
+    #panel .bnd-ctl.on { display: flex; }
+    #panel .bnd-ctl input { flex: 1; min-width: 0; background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .14); border-radius: 6px; color: #e8edf4; padding: 5px 8px; font: 400 11px system-ui, sans-serif; }
+    #panel .bnd-ctl input:focus { outline: none; border-color: #4a6cff; }
+    #panel .bnd-ctl button { border: 1px solid rgba(255, 255, 255, .16); background: #1b2130; color: #cdd5df; border-radius: 6px; padding: 5px 8px; font: 600 11px system-ui, sans-serif; white-space: nowrap; cursor: pointer; }
+    #panel .bnd-ctl button:hover { border-color: #4a6cff; color: #fff; }
 
     #panel .sw {
       width: 12px;
@@ -232,6 +325,134 @@
       color: #c9cfda;
     }
 
+    /* ---- basemap picker (bottom right) ---- */
+    #basemap-ctl {
+      position: absolute;
+      right: 12px;
+      bottom: 46px;
+      z-index: 3;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+    }
+
+    #basemap-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      background: #131923;
+      color: #cfe0ff;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, .45);
+    }
+
+    #basemap-btn:hover,
+    #basemap-btn.on {
+      border-color: #4a6cff;
+      color: #fff;
+    }
+
+    #basemap-menu {
+      width: 232px;
+      background: rgba(16, 21, 30, .96);
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 10px;
+      padding: 8px;
+      box-shadow: 0 8px 26px rgba(0, 0, 0, .55);
+      max-height: 60vh;
+      overflow-y: auto;
+    }
+
+    #basemap-menu[hidden] { display: none; }
+
+    #basemap-menu .bm-hd {
+      font: 700 11px system-ui, sans-serif;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: #8fa3bf;
+      margin-bottom: 6px;
+    }
+
+    #basemap-menu .bm-note {
+      margin-top: 7px;
+      font: 400 10px system-ui, sans-serif;
+      color: #7d8ba0;
+      line-height: 1.35;
+    }
+
+    #basemap-list .bm {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      width: 100%;
+      text-align: left;
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 5px 7px;
+      color: #cdd6e2;
+      font: 500 12px system-ui, sans-serif;
+      cursor: pointer;
+    }
+
+    #basemap-list .bm:hover { background: rgba(74, 108, 255, .14); }
+
+    #basemap-list .bm.sel {
+      border-color: #4a6cff;
+      background: rgba(74, 108, 255, .2);
+      color: #fff;
+    }
+
+    #basemap-list .bm .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+      background: #46506b;
+    }
+
+    #basemap-list .bm.sel .dot { background: #4a6cff; }
+
+    #basemap-list .bm .trace {
+      margin-left: auto;
+      font-size: 10px;
+      color: #6ee7a8;
+    }
+
+    /* ---- always-visible HD opacity bar (bottom centre) ----
+       Centred rather than left-docked so it can't collide with MapLibre's scale
+       bar / attribution in the bottom corners. */
+    #opacity-bar {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 12px;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(16, 21, 30, .92);
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 9px;
+      padding: 6px 10px;
+      box-shadow: 0 3px 12px rgba(0, 0, 0, .45);
+      font: 500 11px system-ui, sans-serif;
+      color: #b9c6d8;
+    }
+
+    #opacity-bar input[type=range] { width: 130px; }
+
+    #opacity-bar #hd-op-val {
+      width: 34px;
+      text-align: right;
+      color: #e8edf4;
+      font-variant-numeric: tabular-nums;
+    }
+
     #ed-split {
       width: 100%;
       margin-top: 8px;
@@ -270,16 +491,14 @@
       margin-top: 4px;
     }
 
-    #tools {
-      margin-top: 10px;
-      border-top: 1px solid #2a2f3a;
-      padding-top: 10px;
+    .tools {
+      margin-top: 8px;
       display: flex;
       flex-direction: column;
       gap: 6px;
     }
 
-    #tools button {
+    .tools button {
       border: none;
       border-radius: 6px;
       padding: 7px 9px;
@@ -298,23 +517,39 @@
       color: #d9cdea;
     }
 
-    #btn-submit {
+    /* buildings mirror the road staging flow, so they share its look */
+    #btn-submit,
+    #btn-submit-bldg {
       background: #3a3f4b;
       color: #7c8496;
       cursor: default;
     }
 
-    #btn-submit.ready {
+    #btn-submit.ready,
+    #btn-submit-bldg.ready {
       background: #d94ff2;
       color: #2a0733;
       cursor: pointer;
     }
 
+    #btn-submit-bldg {
+      width: 100%;
+      margin-top: 8px;
+      border: none;
+      border-radius: 6px;
+      padding: 7px 9px;
+      font: 600 12px system-ui, sans-serif;
+      text-align: left;
+    }
+
+    /* shared across all tabs (sits below the panes, above the live-sync line) */
     #tool-status {
       font-size: 11px;
       opacity: .8;
       min-height: 14px;
+      margin-top: 8px;
     }
+    #tool-status:empty { margin-top: 0; } /* no dead space when idle */
 
     #tool-status a {
       color: #7fd1ff;
@@ -325,13 +560,15 @@
       opacity: 1;
     }
 
-    #staged-list {
+    #staged-list,
+    #staged-bldg-list {
       display: flex;
       flex-direction: column;
       gap: 3px;
     }
 
-    #staged-list .item {
+    #staged-list .item,
+    #staged-bldg-list .item {
       display: flex;
       align-items: center;
       gap: 6px;
@@ -342,7 +579,8 @@
       padding: 3px 6px;
     }
 
-    #staged-list .item .lbl {
+    #staged-list .item .lbl,
+    #staged-bldg-list .item .lbl {
       flex: 1;
       min-width: 0;
       overflow: hidden;
@@ -351,7 +589,8 @@
       color: #e6c7ef;
     }
 
-    #staged-list .item .rm {
+    #staged-list .item .rm,
+    #staged-bldg-list .item .rm {
       flex: 0 0 auto;
       background: none;
       border: none;
@@ -362,7 +601,8 @@
       padding: 0 2px;
     }
 
-    #staged-list .item .rm:hover {
+    #staged-list .item .rm:hover,
+    #staged-bldg-list .item .rm:hover {
       color: #f5b8ff;
     }
 
@@ -515,46 +755,154 @@
 <body>
   <div id="map"></div>
   <div id="panel">
-    <h1>HD road network</h1>
+    <!-- header stays visible when the panel is minimized, so the whole tool
+         collapses to this single row and hands the map back its screen space -->
+    <div id="panel-head">
+      <h1>HD road network</h1>
+      <button id="panel-min" type="button" title="Minimize panel">⌃</button>
+    </div>
     <div id="goto">
       <input id="goto-input" type="text" placeholder="lat, lng — e.g. 21.036860, 105.780890" />
       <button id="goto-btn">Go</button>
     </div>
     <div id="goto-status"></div>
-    <label><input type="checkbox" id="t-lanes" checked /><span class="sw" style="background:#5b6270"></span>
-      Lanes</label>
-    <label><input type="checkbox" id="t-inter" checked /><span class="sw" style="background:#3a3f4b"></span>
-      Intersections</label>
-    <label><input type="checkbox" id="t-mark" checked /><span class="sw" style="background:#ffffff"></span>
-      Markings</label>
-    <label><input type="checkbox" id="t-turn" checked /><span class="sw" style="background:#2ea6a6"></span> Turn lanes
-      <span style="opacity:.6">(teal=left, <span style="color:#c9772e">orange=right</span>)</span></label>
-    <label><input type="checkbox" id="t-sat" /><span class="sw" style="background:#3b6ea5"></span> Satellite
-      imagery</label>
-    <label><input type="checkbox" id="t-bldg" checked /><span class="sw" style="background:#bcb6a6"></span>
-      Buildings (3D)</label>
-    <label><input type="checkbox" id="t-3d" /><span class="sw" style="background:#6a8caf"></span> 3D view
-      (tilt)</label>
-    <label style="opacity:.85">HD opacity
-      <input type="range" id="hd-op" min="0" max="100" value="100" style="flex:1;min-width:0" />
-    </label>
-    <div class="hint">Click a lane (or an intersection) for its OSM tags. Data: osm2streets from OSM.</div>
-    <div id="live" class="hint" style="display:flex;align-items:center;gap:6px;margin-top:6px;">
+
+    <!-- switchable tabs keep the panel compact: Road ⇆ Building -->
+    <div class="tabs">
+      <button class="tab active" data-tab="road" type="button">Road</button>
+      <button class="tab" data-tab="building" type="button">Building</button>
+      <button class="tab" data-tab="batch" type="button">Batch</button>
+    </div>
+
+    <!-- ───────── ROAD TAB ───────── -->
+    <div class="tabpane" data-pane="road">
+      <label><input type="checkbox" id="t-lanes" checked /><span class="sw" style="background:#5b6270"></span>
+        Lanes</label>
+      <label><input type="checkbox" id="t-inter" checked /><span class="sw" style="background:#3a3f4b"></span>
+        Intersections</label>
+      <label><input type="checkbox" id="t-mark" checked /><span class="sw" style="background:#ffffff"></span>
+        Markings</label>
+      <label><input type="checkbox" id="t-turn" checked /><span class="sw" style="background:#2ea6a6"></span> Turn
+        lanes <span style="opacity:.6">(teal=left, <span style="color:#c9772e">orange=right</span>)</span></label>
+      <div class="tools">
+        <button id="btn-fetch">⤓ Fetch OSM data (this view)</button>
+        <button id="btn-reset">⌂ Reset to default area</button>
+        <button id="btn-reload">↻ Reload local file (after JOSM save)</button>
+        <button id="btn-uploaded">✓ Mark uploaded (clear modify flags)</button>
+        <div id="data-age" class="hint" style="margin-top:0"></div>
+        <button id="btn-submit">Submit changeset (0)</button>
+        <div id="staged-list"></div>
+      </div>
+      <div class="hint">Click a lane (or an intersection) for its OSM tags.
+        Basemap &amp; HD opacity are now the ▤ control at the bottom right.</div>
+    </div>
+
+    <!-- ───────── BUILDING TAB ───────── -->
+    <div class="tabpane" data-pane="building" hidden>
+      <label><input type="checkbox" id="t-bldg" checked /><span class="sw" style="background:#bcb6a6"></span>
+        Buildings (3D)</label>
+      <label><input type="checkbox" id="t-3d" /><span class="sw" style="background:#6a8caf"></span> 3D view
+        (tilt)</label>
+      <div class="tools">
+        <button id="btn-fetch-bldg">⤓ Fetch buildings (this view)</button>
+      </div>
+      <div class="hint">Click a building to edit its tags. Most OSM buildings have no
+        height tagged, so they default to 6 m until you set one.<br>
+        Same flow as roads: <b>Stage edit</b> holds the change in the browser (tinted
+        magenta), then <b>Submit buildings</b> sends them all to one JOSM layer.</div>
+      <button id="btn-submit-bldg">Submit buildings (0)</button>
+      <div id="staged-bldg-list"></div>
+    </div>
+
+    <!-- ───────── BATCH TAB ───────── -->
+    <div class="tabpane" data-pane="batch" hidden>
+      <div class="bsec">
+        <div class="bsec-hd">Boundary fetch</div>
+        <div class="hint" style="margin-top:0">Import a boundary <b>.geojson</b>; fetch pulls only what's
+          <i>inside</i> it instead of the map view.</div>
+        <label class="filebtn">Choose boundary…<input type="file" id="bnd-file" accept=".geojson,.json,application/geo+json" hidden /></label>
+        <div id="bnd-status" class="hint" style="margin-top:2px">no boundary loaded</div>
+        <div id="bnd-ctl" class="bnd-ctl">
+          <input id="bnd-search" type="text" placeholder="find id…" />
+          <button id="btn-bnd-all" type="button">Select all</button>
+          <button id="btn-bnd-none" type="button">Deselect all</button>
+        </div>
+        <div id="bnd-list" class="bnd-list"></div>
+        <div class="tools">
+          <button id="btn-fetch-roads-bnd" disabled>⤓ Fetch roads in boundary</button>
+          <button id="btn-fetch-bldg-bnd" disabled>⤓ Fetch buildings in boundary</button>
+          <button id="btn-clear-bnd" disabled>✕ Clear boundary</button>
+        </div>
+      </div>
+
+      <div class="bsec">
+        <div class="bsec-hd">Road bulk update → JOSM</div>
+        <div class="hint" style="margin-top:0">CSV: <code>type,id,&lt;tag&gt;,…</code> (type = way|node, default way).
+          Fetches those elements by id, applies tags, opens a JOSM layer to upload.</div>
+        <label class="filebtn">Choose roads CSV…<input type="file" id="bulk-road-file" accept=".csv,text/csv" hidden /></label>
+        <div id="bulk-road-status" class="hint" style="margin-top:2px">no file</div>
+        <div class="tools">
+          <button id="btn-bulk-road" disabled>▶ Run road bulk → JOSM</button>
+        </div>
+      </div>
+
+      <div class="bsec">
+        <div class="bsec-hd">Building bulk update → JOSM</div>
+        <div class="hint" style="margin-top:0">CSV: <code>type,id,height,building:levels,…</code>
+          (<code>type</code> = way|relation, default way — use <b>relation</b> for courtyard
+          buildings mapped as multipolygons). Fetches by id, applies tags, updates the 3D
+          heights here and opens a JOSM layer.</div>
+        <label class="filebtn">Choose buildings CSV…<input type="file" id="bulk-bldg-file" accept=".csv,text/csv" hidden /></label>
+        <div id="bulk-bldg-status" class="hint" style="margin-top:2px">no file</div>
+        <div class="tools">
+          <button id="btn-bulk-bldg" disabled>▶ Run building bulk → JOSM</button>
+        </div>
+      </div>
+
+      <div class="bsec">
+        <div class="bsec-hd">Download raw OSM → GeoJSON</div>
+        <div class="hint" style="margin-top:0">Saves the last-fetched data, split by type:
+          roads (raw highway lines + tags) and buildings (polygons) as separate <code>.geojson</code> files.</div>
+        <div class="tools">
+          <button id="btn-dl-roads">⤓ Download roads.geojson</button>
+          <button id="btn-dl-bldg">⤓ Download buildings.geojson</button>
+        </div>
+      </div>
+
+      <div id="batch-status" class="hint" style="margin-top:6px"></div>
+    </div>
+
+    <!-- Shared status line — lives OUTSIDE the tab panes so progress/results from any
+         tab (road fetch, building fetch, reset, height edit) are always visible. It
+         used to sit inside the Road pane, so a building fetch wrote "fetching…" into a
+         display:none element and the Building tab looked frozen. -->
+    <div id="tool-status"></div>
+
+    <div id="live" class="hint" style="display:flex;align-items:center;gap:6px;margin-top:8px;">
       <span id="live-dot"
         style="width:8px;height:8px;border-radius:50%;background:#6b7280;display:inline-block;"></span>
       <span id="live-text">live sync: off</span>
     </div>
-    <div id="tools">
-      <button id="btn-fetch">⤓ Fetch OSM data (this view)</button>
-      <button id="btn-fetch-bldg">⤓ Fetch buildings (this view)</button>
-      <button id="btn-reset">⌂ Reset to default area</button>
-      <button id="btn-reload">↻ Reload local file (after JOSM save)</button>
-      <button id="btn-uploaded">✓ Mark uploaded (clear modify flags)</button>
-      <div id="data-age" class="hint" style="margin-top:0"></div>
-      <button id="btn-submit">Submit changeset (0)</button>
-      <div id="staged-list"></div>
-      <div id="tool-status"></div>
+  </div>
+
+  <!-- Basemap picker (bottom right) — single-select list of key-free basemaps.
+       Only sources in OSM's editor-imagery-index may legally be TRACED from; the
+       rest are for orientation only, so each entry says which it is. -->
+  <div id="basemap-ctl">
+    <div id="basemap-menu" hidden>
+      <div class="bm-hd">Basemap</div>
+      <div id="basemap-list"></div>
+      <div class="bm-note">✎ = cleared for tracing into OSM. Others are reference only —
+        never trace from them.</div>
     </div>
+    <button id="basemap-btn" title="Basemap &amp; imagery" type="button">▤</button>
+  </div>
+
+  <!-- HD opacity — always visible (fade the HD polygons to trace the basemap) -->
+  <div id="opacity-bar">
+    <span class="ob-lbl">HD opacity</span>
+    <input type="range" id="hd-op" min="0" max="100" value="100" />
+    <span id="hd-op-val">100%</span>
   </div>
 
   <div id="editor">
@@ -613,6 +961,48 @@
         .then((r) => r.json()).catch(() => ({ type: "FeatureCollection", features: [] }));
       let currentLanes = lanesGeojson; // latest lane features (updated on live reload)
       let currentIntersections = intersectionsGeojson; // kept for node (intersection) editing
+      let currentBuildings = buildingsGeojson; // kept for building (height) editing
+
+      // Visual gap between neighbouring buildings: shrink each footprint slightly
+      // toward its own centroid so touching blocks read as separate. This is a
+      // RENDER-ONLY transform — the true geometry stays in currentBuildings and in
+      // the server's buildings.geojson (so the GeoJSON download is unaffected).
+      // The inset is a roughly-fixed ~2.2 m (clamped) rather than a flat ratio, so
+      // small houses don't collapse and big blocks still get a visible seam.
+      const GAP_METERS = 2.2;
+      const shrinkRing = (ring, ratio, cx, cy) =>
+        ring.map(([x, y]) => [cx + (x - cx) * ratio, cy + (y - cy) * ratio]);
+      const shrinkPolygon = (rings) => {
+        const outer = rings[0];
+        if (!outer || outer.length < 4) return rings;
+        let cx = 0, cy = 0;
+        for (const [x, y] of outer) { cx += x; cy += y; }
+        cx /= outer.length; cy /= outer.length;
+        // metric span of the outer ring (deg → m; lon scaled by latitude)
+        let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+        for (const [x, y] of outer) {
+          if (x < minx) minx = x; if (x > maxx) maxx = x;
+          if (y < miny) miny = y; if (y > maxy) maxy = y;
+        }
+        const mPerDegLat = 111320, mPerDegLon = 111320 * Math.cos((cy * Math.PI) / 180);
+        const wM = (maxx - minx) * mPerDegLon, hM = (maxy - miny) * mPerDegLat;
+        const halfSpan = Math.min(wM, hM) / 2;
+        if (!(halfSpan > 0)) return rings;
+        const ratio = Math.max(0.75, Math.min(0.97, 1 - GAP_METERS / halfSpan));
+        return rings.map((r) => shrinkRing(r, ratio, cx, cy));
+      };
+      const shrinkBuildings = (fc) => ({
+        type: "FeatureCollection",
+        features: (fc.features || []).map((f) => {
+          const g = f.geometry;
+          if (!g) return f;
+          if (g.type === "Polygon")
+            return { ...f, geometry: { ...g, coordinates: shrinkPolygon(g.coordinates) } };
+          if (g.type === "MultiPolygon")
+            return { ...f, geometry: { ...g, coordinates: g.coordinates.map(shrinkPolygon) } };
+          return f;
+        }),
+      });
 
       // deterministic startup (roadmap #7): boot to a FIXED area/view (the Pham
       // Hung interchange, Hanoi) instead of a value derived from whatever data
@@ -784,10 +1174,49 @@
         {
           id: "buildings-3d", type: "fill-extrusion", source: "buildings",
           paint: {
-            "fill-extrusion-color": "#bcb6a6",
+            // Per-building shade: neighbours that share a wall would otherwise
+            // read as one blob, so tint each block by a hash of its way id
+            // (id % 6 → a palette of nearby earth tones). Adjacent buildings
+            // almost always land on different shades, making each one distinct.
+            "fill-extrusion-color": [
+              "match", ["%", ["to-number", ["get", "osm_way_id"], 0], 6],
+              0, "#c7c0ac",
+              1, "#b3ac98",
+              2, "#c1b9a4",
+              3, "#a9a28e",
+              4, "#cac3b0",
+              5, "#b8b19d",
+              "#bcb6a6"
+            ],
             "fill-extrusion-height": ["coalesce", ["get", "height"], 6],
             "fill-extrusion-base": ["coalesce", ["get", "base"], 0],
-            "fill-extrusion-opacity": 0.85,
+            "fill-extrusion-opacity": 0.92,
+            // shade walls darker toward the ground so each block has depth
+            "fill-extrusion-vertical-gradient": true,
+          }
+        },
+        // staged (un-submitted) building edits — magenta, exactly like the staged
+        // road tint, so a pending building reads the same as a pending way.
+        {
+          id: "buildings-staged", type: "fill-extrusion", source: "buildings",
+          filter: ["==", ["get", "osm_way_id"], "__none__"], // nothing until staged
+          paint: {
+            "fill-extrusion-color": "#d94ff2",
+            "fill-extrusion-height": ["coalesce", ["get", "height"], 6],
+            "fill-extrusion-base": ["coalesce", ["get", "base"], 0],
+            "fill-extrusion-opacity": 0.9,
+          }
+        },
+        // selected building highlight (gold), keyed by osm_way_id via setFilter.
+        // Same height/base as buildings-3d so the lit block reads as "this one".
+        {
+          id: "buildings-hi", type: "fill-extrusion", source: "buildings",
+          filter: ["==", ["get", "osm_way_id"], "__none__"], // nothing until selected
+          paint: {
+            "fill-extrusion-color": "#ffd23f",
+            "fill-extrusion-height": ["coalesce", ["get", "height"], 6],
+            "fill-extrusion-base": ["coalesce", ["get", "base"], 0],
+            "fill-extrusion-opacity": 0.95,
           }
         },
         // staged edits (pending, not yet submitted) — magenta tint so you can
@@ -818,12 +1247,26 @@
           id: "hl-select-line", type: "line", source: "hl-select",
           paint: { "line-color": "#ffd23f", "line-width": 3 }
         },
+        // imported fetch boundary outline (Batch tab) — dashed cyan so it reads
+        // as a guide, not part of the network.
+        {
+          id: "boundary-fill", type: "fill", source: "boundary",
+          paint: { "fill-color": "#22d3ee", "fill-opacity": ["case", ["get", "include"], 0.06, 0] }
+        },
+        {
+          id: "boundary-line", type: "line", source: "boundary",
+          paint: {
+            "line-color": "#22d3ee", "line-width": 2, "line-dasharray": [3, 2],
+            "line-opacity": ["case", ["get", "include"], 1, 0.25],
+          }
+        },
       ];
 
       const map = new maplibregl.Map({
         container: "map",
         center: DEFAULT_CENTER,
         zoom: DEFAULT_ZOOM,
+        doubleClickZoom: false, // repurposed: double-click copies the coordinate
         style: {
           version: 8,
           sources: {
@@ -843,7 +1286,10 @@
             "hl-select": { type: "geojson", data: { type: "FeatureCollection", features: [] } },
             "staged": { type: "geojson", data: { type: "FeatureCollection", features: [] } },
             "turn-arrows": { type: "geojson", data: turnArrowsGeojson },
-            buildings: { type: "geojson", data: buildingsGeojson },
+            buildings: { type: "geojson", data: shrinkBuildings(buildingsGeojson) },
+            // imported fetch boundary (Batch tab) — drawn so you see the exact
+            // area a boundary fetch will pull, instead of the map viewport.
+            boundary: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
           },
           layers: styleLayers,
           // directional light for building-extrusion shading (anchor:"map" so the
@@ -962,6 +1408,15 @@
         if (e.key === "Enter") goTo();
       });
 
+      // panel tabs: click a name to switch Road ⇆ Building (panes just hide, so
+      // every control stays in the DOM and its bindings/ids keep working)
+      const tabBtns = document.querySelectorAll("#panel .tab");
+      const tabPanes = document.querySelectorAll("#panel .tabpane");
+      tabBtns.forEach((btn) => btn.addEventListener("click", () => {
+        tabBtns.forEach((b) => b.classList.toggle("active", b === btn));
+        tabPanes.forEach((p) => { p.hidden = p.dataset.pane !== btn.dataset.tab; });
+      }));
+
       // layer toggles
       const bind = (id, ...layers) => {
         document.getElementById(id).addEventListener("change", (e) => {
@@ -998,7 +1453,7 @@
       bind("t-mark", "markings", "markings-hi");
       bind("t-turn", "turn-left", "turn-right", "turn-arrows",
         "turn-left-hi", "turn-right-hi", "turn-arrows-hi");
-      bind("t-bldg", "buildings-3d");
+      bind("t-bldg", "buildings-3d", "buildings-staged");
 
       // 3D view: tilt the camera (buildings/bridges rise once pitched). Off =
       // today's top-down. dragRotate/touchPitch stay live for manual control.
@@ -1006,10 +1461,111 @@
         map.easeTo({ pitch: e.target.checked ? 55 : 0, duration: 600 });
       });
 
-      // satellite basemap toggle + HD-opacity slider (fade polygons to trace imagery)
-      document.getElementById("t-sat").addEventListener("change", (e) => {
-        map.setLayoutProperty("satellite", "visibility", e.target.checked ? "visible" : "none");
+      // ---- minimize the panel to a single header row -----------------------
+      // Everything but #panel-head is hidden via CSS, so the collapsed state costs
+      // one row and nothing is unmounted (staged edits, tab, scroll all survive).
+      const panelEl = document.getElementById("panel");
+      const panelMinBtn = document.getElementById("panel-min");
+      const PANEL_MIN_KEY = "hdmap.panelMin";
+      const setPanelMin = (on) => {
+        panelEl.classList.toggle("min", on);
+        panelMinBtn.textContent = on ? "⌄" : "⌃";
+        panelMinBtn.title = on ? "Restore panel" : "Minimize panel";
+        try { localStorage.setItem(PANEL_MIN_KEY, on ? "1" : "0"); } catch (_) { }
+      };
+      panelMinBtn.onclick = () => setPanelMin(!panelEl.classList.contains("min"));
+      setPanelMin(localStorage.getItem(PANEL_MIN_KEY) === "1"); // restore last state
+
+      // ---- basemap picker (bottom-right ▤) ---------------------------------
+      // Key-free raster sources only, so nothing here needs an account. `trace: true`
+      // marks imagery listed in OSM's editor-imagery-index — the ONLY ones you may
+      // legally trace new geometry from. The rest are orientation/reference only.
+      const BASEMAPS = [
+        { id: "none", label: "None (plain)", tiles: null },
+        {
+          id: "esri", label: "Esri World Imagery", trace: true, maxzoom: 19,
+          tiles: ["https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+          attribution: "Imagery © Esri, Maxar, Earthstar Geographics",
+        },
+        {
+          id: "osm", label: "OSM Carto (street)", maxzoom: 19,
+          tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+          attribution: "© OpenStreetMap contributors",
+        },
+        {
+          id: "topo", label: "OpenTopoMap", maxzoom: 17,
+          tiles: ["https://a.tile.opentopomap.org/{z}/{x}/{y}.png"],
+          attribution: "© OpenTopoMap, © OpenStreetMap contributors",
+        },
+        {
+          id: "carto-light", label: "Carto Positron (light)", maxzoom: 19,
+          tiles: ["https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"],
+          attribution: "© CARTO, © OpenStreetMap contributors",
+        },
+        {
+          id: "carto-dark", label: "Carto Dark Matter", maxzoom: 19,
+          tiles: ["https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"],
+          attribution: "© CARTO, © OpenStreetMap contributors",
+        },
+        {
+          id: "esri-topo", label: "Esri Topographic", maxzoom: 19,
+          tiles: ["https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"],
+          attribution: "© Esri",
+        },
+      ];
+      const BM_KEY = "hdmap.basemap";
+      let currentBasemap = localStorage.getItem(BM_KEY) || "none";
+
+      const applyBasemap = (id) => {
+        const bm = BASEMAPS.find((b) => b.id === id) || BASEMAPS[0];
+        currentBasemap = bm.id;
+        try { localStorage.setItem(BM_KEY, bm.id); } catch (_) { }
+        if (!bm.tiles) {
+          if (map.getLayer("satellite")) map.setLayoutProperty("satellite", "visibility", "none");
+        } else {
+          const src = map.getSource("sat");
+          // RasterTileSource.setTiles swaps the endpoint in place (no style reload)
+          if (src?.setTiles) src.setTiles(bm.tiles);
+          if (src) { src.attribution = bm.attribution || ""; src.maxzoom = bm.maxzoom || 19; }
+          if (map.getLayer("satellite")) map.setLayoutProperty("satellite", "visibility", "visible");
+        }
+        renderBasemapList();
+      };
+
+      const bmListEl = document.getElementById("basemap-list");
+      const renderBasemapList = () => {
+        bmListEl.innerHTML = "";
+        for (const bm of BASEMAPS) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "bm" + (bm.id === currentBasemap ? " sel" : "");
+          const dot = document.createElement("span"); dot.className = "dot";
+          const lbl = document.createElement("span"); lbl.textContent = bm.label;
+          b.append(dot, lbl);
+          if (bm.trace) {
+            const t = document.createElement("span");
+            t.className = "trace"; t.textContent = "✎"; t.title = "cleared for tracing into OSM";
+            b.appendChild(t);
+          }
+          b.onclick = () => applyBasemap(bm.id);
+          bmListEl.appendChild(b);
+        }
+      };
+
+      const bmBtn = document.getElementById("basemap-btn");
+      const bmMenu = document.getElementById("basemap-menu");
+      bmBtn.onclick = (e) => {
+        e.stopPropagation();
+        bmMenu.hidden = !bmMenu.hidden;
+        bmBtn.classList.toggle("on", !bmMenu.hidden);
+      };
+      // click anywhere else closes it
+      document.addEventListener("click", (e) => {
+        if (bmMenu.hidden || document.getElementById("basemap-ctl").contains(e.target)) return;
+        bmMenu.hidden = true; bmBtn.classList.remove("on");
       });
+      renderBasemapList();
+      map.on("load", () => applyBasemap(currentBasemap)); // restore last choice
       // [layer id, paint prop, base opacity] for every HD layer the slider fades
       const HD_OPACITY = [
         ["lanes", "fill-opacity", 1], ["lanes-hi", "fill-opacity", 1],
@@ -1020,11 +1576,17 @@
         ["intersections", "fill-opacity", 1], ["inter-edge", "line-opacity", 0.9],
         ["turn-arrows", "icon-opacity", 1], ["turn-arrows-hi", "icon-opacity", 1],
       ];
+      // always-visible bottom-left bar; also fades the 3D buildings so imagery
+      // stays readable underneath them
+      const hdOpVal = document.getElementById("hd-op-val");
       document.getElementById("hd-op").addEventListener("input", (e) => {
         const f = e.target.value / 100;
+        hdOpVal.textContent = `${e.target.value}%`;
         HD_OPACITY.forEach(([id, prop, base]) => {
           if (map.getLayer(id)) map.setPaintProperty(id, prop, base * f);
         });
+        for (const [id, base] of [["buildings-3d", 0.92], ["buildings-staged", 0.9]])
+          if (map.getLayer(id)) map.setPaintProperty(id, "fill-extrusion-opacity", base * f);
       });
 
       // all lane features belonging to one OSM way
@@ -1057,8 +1619,25 @@
       let hoverId = null;
       let selected = null; // { kind: "way" | "node", id }
       const subsetFor = (kind, id) => (kind === "node" ? nodeSubset(id) : waySubset(id));
-      const select = (kind, id) => { selected = { kind, id }; setSrc("hl-select", subsetFor(kind, id)); };
+      const select = (kind, id) => { selected = { kind, id }; setSrc("hl-select", subsetFor(kind, id)); selectBuilding(null); };
       const reselect = () => { if (selected) setSrc("hl-select", subsetFor(selected.kind, selected.id)); };
+
+      // ---- building selection: highlight one extruded building by osm_way_id
+      // (buildings are their own source/layer, so they use setFilter rather than
+      // the hl-select geojson subset the lanes/nodes use) ----
+      // Buildings are ways OR multipolygon relations, and OSM ids are only unique
+      // PER TYPE — way 123 and relation 123 are different objects — so the selection
+      // is keyed on (type, id), not id alone.
+      let selectedBuilding = null;
+      const BLDG_NONE = ["==", ["get", "osm_way_id"], "__none__"];
+      const selectBuilding = (id, type) => {
+        selectedBuilding = id == null ? null : { id: String(id), type: String(type || "way") };
+        if (map.getLayer("buildings-hi"))
+          map.setFilter("buildings-hi", selectedBuilding == null ? BLDG_NONE
+            : ["all",
+              ["==", ["get", "osm_way_id"], selectedBuilding.id],
+              ["==", ["coalesce", ["get", "osm_type"], "way"], selectedBuilding.type]]);
+      };
 
       // hover highlight (blue)
       map.on("mousemove", LANE_LAYERS, (e) => {
@@ -1089,6 +1668,43 @@
         if (nid) { select("node", nid); openEditor("node", nid); }
       });
 
+      // click a building -> edit its inferred height (independent layer). Roads
+      // take priority: if a lane is also under the cursor, that click is handled
+      // by the lane handler above and we bail here.
+      map.on("mouseenter", "buildings-3d", () => (map.getCanvas().style.cursor = "pointer"));
+      map.on("mouseleave", "buildings-3d", () => (map.getCanvas().style.cursor = ""));
+      map.on("click", "buildings-3d", (e) => {
+        if (map.queryRenderedFeatures(e.point, { layers: LANE_LAYERS }).length) return;
+        const p = e.features?.[0]?.properties || {};
+        const bid = p.osm_way_id, btype = p.osm_type || "way";
+        if (bid != null) { selectBuilding(bid, btype); openEditor("building", bid, btype); }
+      });
+
+      // double-click anywhere on the canvas -> copy "lat, lng" at the cursor to the
+      // clipboard (same order/precision as the Go search box). Default dbl-click
+      // zoom is disabled above so this is a pure copy. A small toast confirms it.
+      const copyToast = document.createElement("div");
+      copyToast.id = "copy-toast";
+      copyToast.style.cssText =
+        "position:absolute;z-index:9;pointer-events:none;padding:5px 9px;border-radius:7px;" +
+        "background:rgba(20,26,38,.92);color:#e8edf4;font:600 12px system-ui,sans-serif;" +
+        "border:1px solid rgba(74,108,255,.5);box-shadow:0 4px 14px rgba(0,0,0,.4);" +
+        "opacity:0;transition:opacity .15s;white-space:nowrap;transform:translate(-50%,-140%)";
+      document.getElementById("map").appendChild(copyToast);
+      let copyToastT = null;
+      map.on("dblclick", async (e) => {
+        const coord = `${e.lngLat.lat.toFixed(6)}, ${e.lngLat.lng.toFixed(6)}`; // lat, lng
+        let ok = true;
+        try { await navigator.clipboard.writeText(coord); }
+        catch (_) { ok = false; }
+        copyToast.textContent = (ok ? "📋 copied " : "⚠ copy blocked — ") + coord;
+        copyToast.style.left = e.point.x + "px";
+        copyToast.style.top = e.point.y + "px";
+        copyToast.style.opacity = "1";
+        if (copyToastT) clearTimeout(copyToastT);
+        copyToastT = setTimeout(() => (copyToast.style.opacity = "0"), 1300);
+      });
+
       // ---- live sync: poll version.json; on change, reload the 3 sources in
       // place (keeps the current pan/zoom). Driven by watch.mjs. ----
       const dot = document.getElementById("live-dot");
@@ -1108,7 +1724,9 @@
         map.getSource("markings").setData(mk);
         map.getSource("intersections").setData(it);
         if (ta) map.getSource("turn-arrows").setData(ta);
-        if (bd) map.getSource("buildings")?.setData(bd);
+        // source gets the shrunk (gapped) copy for display; currentBuildings keeps
+        // the true geometry for editing/height lookup.
+        if (bd) { map.getSource("buildings")?.setData(shrinkBuildings(bd)); currentBuildings = bd; }
         currentLanes = ln;
         currentIntersections = it;
         reselect(); // re-highlight the selected way/node after reload
@@ -1124,6 +1742,7 @@
       const edRows = document.getElementById("ed-rows");
       const edStatus = document.getElementById("ed-status");
       let editingKind = null, editingId = null, editingOrig = {};
+      let editingOsmType = "way"; // real OSM element type: way | node | relation
       // one-click keys, per element kind
       const QUICK_WAY = ["lanes", "lanes:forward", "lanes:backward", "oneway",
         "turn:lanes", "turn:lanes:forward", "turn:lanes:backward",
@@ -1132,6 +1751,8 @@
         "access", "motor_vehicle", "motorcycle", "moped", "bicycle", "foot", "hgv", "bus"];
       const QUICK_NODE = ["highway", "crossing", "traffic_calming",
         "stop", "give_way", "railway", "barrier"];
+      const QUICK_BUILDING = ["height", "building:levels", "min_height",
+        "building:min_level", "building", "name"];
 
       const addRow = (k = "", v = "") => {
         const row = document.createElement("div");
@@ -1166,19 +1787,29 @@
         });
       };
 
-      async function openEditor(kind, id) {
+      async function openEditor(kind, id, osmType) {
         editingKind = kind; editingId = id;
+        const isBldg = kind === "building";
+        // a building is a way OR a multipolygon relation — carry the real element type
+        editingOsmType = isBldg ? (osmType || "way") : kind;
         document.getElementById("ed-title").textContent =
-          kind === "node" ? "Edit node tags" : "Edit lane tags";
-        document.getElementById("ed-kind").textContent = kind;
+          isBldg ? "Edit building" : kind === "node" ? "Edit node tags" : "Edit lane tags";
+        document.getElementById("ed-kind").textContent = editingOsmType;
         document.getElementById("ed-id").textContent = id;
-        document.getElementById("ed-osm").href = `https://www.openstreetmap.org/${kind}/${id}`;
+        // link to the right element type on osm.org (way/… vs relation/…)
+        document.getElementById("ed-osm").href =
+          `https://www.openstreetmap.org/${editingOsmType}/${id}`;
         document.getElementById("ed-split").style.display = kind === "way" ? "block" : "none";
         document.getElementById("ed-lanes").style.display = kind === "way" ? "block" : "none";
-        renderQuick(kind === "node" ? QUICK_NODE : QUICK_WAY);
+        // "Stage edit" routes through the JOSM changeset; buildings apply directly
+        document.getElementById("ed-apply").textContent = "Stage edit"; // roads AND buildings stage
+        renderQuick(isBldg ? QUICK_BUILDING : kind === "node" ? QUICK_NODE : QUICK_WAY);
         edStatus.textContent = "loading tags…";
         edRows.innerHTML = "";
         ed.style.display = "block";
+        // buildings live in the independent client geojson, not current.osm — load
+        // their editable tags straight from the feature (no /api round-trip).
+        if (isBldg) { edWarn.style.display = "none"; openBuildingEditor(id, editingOsmType); return; }
         try {
           const info = await fetch(`/api/${kind}?id=${id}`).then((r) => r.json());
           const tags = info.tags || {};
@@ -1197,6 +1828,34 @@
           editingOrig = {};
           edStatus.textContent = "could not load tags (is server.mjs running?)";
         }
+      }
+
+      // ---- building editor: tags come from the client geojson feature -------
+      // Buildings aren't in current.osm, so we read/write their height-relevant
+      // tags from the in-memory buildings layer. `height` is the one that drives
+      // the extrusion; the others (levels / min_height / type) are shown so a
+      // real value can be entered where OSM has none.
+      // match on (type, id): OSM ids are only unique per element type
+      const findBuildingFeature = (id, type) => currentBuildings.features.find(
+        (x) => String(x.properties?.osm_way_id) === String(id) &&
+          String(x.properties?.osm_type || "way") === String(type || "way"));
+
+      function openBuildingEditor(id, osmType) {
+        const f = findBuildingFeature(id, osmType);
+        if (!f) { edStatus.textContent = "building not in current data"; return; }
+        const p = f.properties || {};
+        const tags = {};
+        tags["height"] = String(p.height ?? 6);
+        if (p.levels != null) tags["building:levels"] = String(p.levels);
+        if (p.base != null && Number(p.base) > 0) tags["min_height"] = String(p.base);
+        if (p.min_level != null) tags["building:min_level"] = String(p.min_level);
+        if (p.building != null) tags["building"] = String(p.building);
+        if (p.name != null) tags["name"] = String(p.name);
+        editingOrig = { ...tags };
+        Object.entries(tags).forEach(([k, v]) => addRow(k, v));
+        edStatus.textContent =
+          `${p.name ? p.name + " · " : ""}height ${p.height ?? 6} m` +
+          (p.levels ? ` (${p.levels} levels)` : " (no height tagged in OSM)");
       }
 
       // ---- collect current rows into a tag object ----
@@ -1434,6 +2093,116 @@
       const clearSelection = () => {
         selected = null;
         setSrc("hl-select", EMPTY);
+        selectBuilding(null);
+      };
+
+      // ---- building staging — the SAME two-step flow roads use --------------
+      // "Stage edit" holds the change in the browser (magenta tint + a removable row)
+      // and previews the new extrusion locally; nothing leaves the browser. Then
+      // "Submit buildings (N)" sends them ALL through /api/bulk in one go, which
+      // fetches each element by id/type from OSM, merges the tags, marks
+      // action="modify" and opens ONE JOSM layer to review & upload.
+      const pendingBuildings = {}; // "type/id" -> { id, osmType, tags, orig }
+      const bldgKey = (type, id) => `${type || "way"}/${id}`;
+      const btnSubmitBldg = document.getElementById("btn-submit-bldg");
+      const stagedBldgList = document.getElementById("staged-bldg-list");
+      const num = (s) => { const m = String(s ?? "").match(/-?\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : null; };
+
+      // keep only non-empty key/value rows — never stage blank rows
+      const cleanTags = (raw) => {
+        const t = {};
+        for (const [k, v] of Object.entries(raw)) {
+          const key = String(k || "").trim(), val = String(v ?? "").trim();
+          if (key && val) t[key] = val;
+        }
+        return t;
+      };
+
+      // magenta tint over every staged building, matched on (type, id)
+      const refreshStagedBuildings = () => {
+        const keys = Object.keys(pendingBuildings);
+        if (map.getLayer("buildings-staged")) {
+          map.setFilter("buildings-staged", keys.length
+            ? ["in",
+              ["concat", ["coalesce", ["get", "osm_type"], "way"], "/", ["get", "osm_way_id"]],
+              ["literal", keys]]
+            : BLDG_NONE);
+        }
+        btnSubmitBldg.textContent = `Submit buildings (${keys.length})`;
+        btnSubmitBldg.classList.toggle("ready", keys.length > 0);
+        stagedBldgList.innerHTML = "";
+        for (const [key, e] of Object.entries(pendingBuildings)) {
+          const item = document.createElement("div"); item.className = "item";
+          const lbl = document.createElement("span"); lbl.className = "lbl";
+          const summary = Object.entries(e.tags).map(([k, v]) => `${k}=${v}`).join(", ");
+          const text = `${e.osmType} ${e.id} · ${summary || "(no change)"}`;
+          lbl.textContent = text; lbl.title = text;
+          const rm = document.createElement("button");
+          rm.className = "rm"; rm.textContent = "✕"; rm.title = "discard this staged edit";
+          rm.onclick = () => { delete pendingBuildings[key]; refreshStagedBuildings(); };
+          item.append(lbl, rm);
+          stagedBldgList.appendChild(item);
+        }
+      };
+
+      function stageBuilding() {
+        const tags = cleanTags(collectTags());
+        if (!Object.keys(tags).length) {
+          edStatus.textContent = "nothing to stage — add at least one tag";
+          return;
+        }
+        if (!/^\d+$/.test(String(editingId))) {
+          edStatus.textContent = "can't stage: this building has no numeric OSM id";
+          return;
+        }
+        // local preview so the extrusion reflects the staged height right away
+        // (browser-only, exactly like a staged way — a reload discards it)
+        const f = findBuildingFeature(editingId, editingOsmType);
+        if (f) {
+          let height = num(tags["height"]);
+          if (height == null && tags["building:levels"] != null) height = num(tags["building:levels"]) * 3;
+          if (height == null) height = f.properties.height ?? 6;
+          let base = num(tags["min_height"]);
+          if (base == null && tags["building:min_level"] != null) base = num(tags["building:min_level"]) * 3;
+          if (base == null) base = 0;
+          f.properties.height = height;
+          f.properties.base = base;
+          f.properties.levels = tags["building:levels"] ?? null;
+          f.properties.min_level = tags["building:min_level"] ?? null;
+          f.properties.building = tags["building"] ?? f.properties.building ?? null;
+          f.properties.name = tags["name"] ?? f.properties.name ?? null;
+          map.getSource("buildings")?.setData(shrinkBuildings(currentBuildings));
+        }
+        pendingBuildings[bldgKey(editingOsmType, editingId)] =
+          { id: String(editingId), osmType: editingOsmType, tags, orig: editingOrig };
+        refreshStagedBuildings();
+        ed.style.display = "none";
+        selectBuilding(null);
+        toolStatus.textContent =
+          `staged building ${editingOsmType} ${editingId} — ` +
+          `${Object.keys(pendingBuildings).length} pending building edit(s)`;
+      }
+
+      // Submit ALL staged buildings as one JOSM layer (mirrors "Submit changeset")
+      btnSubmitBldg.onclick = async () => {
+        const rows = Object.values(pendingBuildings)
+          .map((e) => ({ id: e.id, type: e.osmType, tags: e.tags }));
+        if (!rows.length) return;
+        const resp = await window._runBulk("building", rows, toolStatus);
+        // only clear the ones that actually applied; refused/missing stay staged
+        if (resp?.ok && resp.matched > 0) {
+          const failed = new Set([
+            ...(resp.skipped || []).map((s) => bldgKey(s.type, s.id)),
+            ...(resp.missing || []).map((id) => null), // missing lacks type — keep all matching ids
+          ].filter(Boolean));
+          const missingIds = new Set((resp.missing || []).map(String));
+          for (const key of Object.keys(pendingBuildings)) {
+            const e = pendingBuildings[key];
+            if (failed.has(key) || missingIds.has(e.id)) continue; // keep for another try
+            delete pendingBuildings[key];
+          }
+          refreshStagedBuildings();
+        }
       };
 
       // ---- staging (plan step 2): edits held in the browser, shown as a magenta
@@ -1499,6 +2268,7 @@
       };
       document.getElementById("ed-apply").onclick = () => {
         if (editingId == null) return;
+        if (editingKind === "building") { stageBuilding(); return; } // same 2-step flow, own submit
         renderWarnings(); // surface issues, but staging is non-blocking
         pendingEdits[editKey(editingKind, editingId)] = {
           kind: editingKind, id: editingId, tags: collectTags(), orig: editingOrig,
@@ -1636,13 +2406,353 @@
           }).then((r) => r.json());
           if (resp.error) { toolStatus.textContent = "buildings fetch failed: " + resp.error; return; }
           const bd = await fetch(`data/buildings.geojson?v=${Date.now()}`).then((r) => r.json());
-          map.getSource("buildings")?.setData(bd);
+          map.getSource("buildings")?.setData(shrinkBuildings(bd));
+          currentBuildings = bd;
           // make sure the layer is on so the result is visible
           document.getElementById("t-bldg").checked = true;
           if (map.getLayer("buildings-3d")) map.setLayoutProperty("buildings-3d", "visibility", "visible");
           toolStatus.textContent = `buildings loaded — ${resp.count} in view`;
         } catch (err) { toolStatus.textContent = "buildings fetch failed: " + err.message; }
       };
+
+      // ═══════════════ BATCH TAB: boundary fetch + bulk CSV → JOSM ═══════════
+      const batchStatus = document.getElementById("batch-status");
+
+      // -- tiny CSV parser (quoted fields, CRLF, "" escapes) --
+      const parseCSV = (text) => {
+        const rows = []; let row = [], field = "", inQ = false;
+        for (let i = 0; i < text.length; i++) {
+          const c = text[i];
+          if (inQ) {
+            if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
+            else field += c;
+          } else if (c === '"') inQ = true;
+          else if (c === ",") { row.push(field); field = ""; }
+          else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+          else if (c !== "\r") field += c;
+        }
+        if (field.length || row.length) { row.push(field); rows.push(row); }
+        return rows.filter((r) => r.some((x) => x.trim() !== ""));
+      };
+      // CSV → [{id, type?, tags:{}}]. Header row: first "id" col + tag-named cols;
+      // roads may add a "type" col (way|node). Blank cells are skipped (unchanged).
+      const csvToRows = (text, kind) => {
+        const cells = parseCSV(text);
+        if (!cells.length) return { error: "empty CSV" };
+        const headers = cells[0].map((h) => h.trim());
+        const lower = headers.map((h) => h.toLowerCase());
+        const idCol = lower.indexOf("id");
+        if (idCol < 0) return { error: "header has no 'id' column" };
+        // `osm_type` is what Download buildings.geojson exports — accept it as the
+        // type column too, or it silently becomes a bogus OSM tag (osm_type=way).
+        const typeCol = lower.indexOf("type") >= 0 ? lower.indexOf("type") : lower.indexOf("osm_type");
+        // The GeoJSON export uses the tool's INTERNAL property names. They are NOT
+        // OSM tags, so round-trip them to the real keys rather than uploading junk.
+        const KEY_ALIAS = {
+          base: "min_height", min_level: "building:min_level", levels: "building:levels",
+        };
+        const KEY_DROP = new Set(["osm_way_id", "osm_type", "osm_id", "type", "height_source"]);
+        const remapped = new Set(), dropped = new Set();
+        const rows = [];
+        for (let r = 1; r < cells.length; r++) {
+          const c = cells[r];
+          const id = (c[idCol] || "").trim();
+          if (!/^\d+$/.test(id)) continue;
+          const tags = {};
+          for (let j = 0; j < headers.length; j++) {
+            if (j === idCol || j === typeCol) continue;
+            const raw = headers[j], v = (c[j] || "").trim();
+            if (!raw || v === "") continue;
+            const lk = raw.toLowerCase();
+            if (KEY_DROP.has(lk)) { dropped.add(raw); continue; } // internal, not an OSM tag
+            const k = KEY_ALIAS[lk] || raw;
+            if (k !== raw) remapped.add(`${raw}→${k}`);
+            tags[k] = v;
+          }
+          const row = { id, tags };
+          // an optional `type` column picks the OSM element. Roads are way|node;
+          // buildings are way|relation (a courtyard building is a MULTIPOLYGON
+          // relation, so without this a CSV simply couldn't address one — and its
+          // id, read as a way, points at an unrelated object).
+          if (typeCol >= 0) {
+            const t = (c[typeCol] || "").trim().toLowerCase();
+            row.type = kind === "road"
+              ? (t === "node" ? "node" : "way")
+              : (t === "relation" ? "relation" : "way");
+          }
+          rows.push(row);
+        }
+        return { rows, remapped: [...remapped], dropped: [...dropped] };
+      };
+
+      // -- boundary import (supports MANY features: a FeatureCollection of
+      //    polygons, e.g. an H3 hex grid) — every feature is listed and drawn, and
+      //    a fetch uses the UNION of the ticked features' rings. --
+      const bndStatus = document.getElementById("bnd-status");
+      const bndListEl = document.getElementById("bnd-list");
+      let boundaryFeatures = []; // [{label, ring:[[lng,lat],…], include}]
+      const includedRings = () => boundaryFeatures.filter((f) => f.include).map((f) => f.ring);
+      const setBndButtons = () => {
+        const on = includedRings().length > 0;
+        document.getElementById("btn-fetch-roads-bnd").disabled = !on;
+        document.getElementById("btn-fetch-bldg-bnd").disabled = !on;
+        document.getElementById("btn-clear-bnd").disabled = boundaryFeatures.length === 0;
+      };
+      // keep the Overpass poly string bounded: sample big rings down to ~500 pts
+      const decimate = (ring, max = 500) => {
+        if (ring.length <= max) return ring;
+        const step = Math.ceil(ring.length / max), out = [];
+        for (let i = 0; i < ring.length; i += step) out.push(ring[i]);
+        return out;
+      };
+      // pull EVERY polygon out of a GeoJSON (Polygon / MultiPolygon / Feature / FC).
+      // A MultiPolygon becomes one entry per part. Label from id/name/h3/ref, else "#n".
+      const featuresFromGeojson = (gj) => {
+        const feats = gj.type === "FeatureCollection" ? (gj.features || [])
+          : gj.type === "Feature" ? [gj]
+            : (gj.type === "Polygon" || gj.type === "MultiPolygon")
+              ? [{ type: "Feature", geometry: gj, properties: {} }] : [];
+        const out = [];
+        feats.forEach((f, i) => {
+          const g = f.geometry, p = f.properties || {};
+          if (!g) return;
+          const rings = g.type === "Polygon" ? [g.coordinates[0]]
+            : g.type === "MultiPolygon" ? g.coordinates.map((poly) => poly[0]) : [];
+          rings.forEach((ring, j) => {
+            if (!ring || ring.length < 4) return;
+            const base = p.id ?? p.name ?? p.h3 ?? p.ref ?? p.gid ?? `#${i + 1}`;
+            const label = rings.length > 1 ? `${base} (${j + 1})` : String(base);
+            out.push({ label, ring: decimate(ring.map((c) => [Number(c[0]), Number(c[1])])), include: true });
+          });
+        });
+        return out;
+      };
+      const drawBoundary = () => {
+        map.getSource("boundary")?.setData({
+          type: "FeatureCollection",
+          features: boundaryFeatures.map((f) => ({
+            type: "Feature", properties: { include: !!f.include },
+            geometry: { type: "Polygon", coordinates: [f.ring] },
+          })),
+        });
+      };
+      const fitBoundary = (rings) => {
+        const all = rings.flat();
+        if (!all.length) return;
+        const lngs = all.map((c) => c[0]), lats = all.map((c) => c[1]);
+        map.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+          { padding: 40, duration: 800 });
+      };
+      // id search + select/deselect-all for the boundary feature list
+      const bndCtlEl = document.getElementById("bnd-ctl");
+      let bndFilter = "";
+      const bndMatches = (f) => !bndFilter || f.label.toLowerCase().includes(bndFilter);
+      const renderBndList = () => {
+        bndListEl.innerHTML = "";
+        bndCtlEl.classList.toggle("on", boundaryFeatures.length > 0);
+        boundaryFeatures.forEach((f) => {
+          const row = document.createElement("div"); row.className = "bnd-row";
+          if (!bndMatches(f)) row.classList.add("hidden"); // filtered out by search
+          const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = f.include;
+          cb.title = "include in fetch";
+          cb.onchange = () => { f.include = cb.checked; drawBoundary(); setBndButtons(); };
+          const lbl = document.createElement("span"); lbl.className = "bnd-lbl";
+          lbl.textContent = f.label; lbl.title = "zoom to " + f.label;
+          lbl.onclick = () => fitBoundary([f.ring]);
+          row.append(cb, lbl);
+          bndListEl.appendChild(row);
+        });
+      };
+      // select/deselect apply to the rows currently matching the search (all rows
+      // when the search box is empty), so you can bulk-toggle just a filtered subset.
+      const setBndAll = (val) => {
+        boundaryFeatures.forEach((f) => { if (bndMatches(f)) f.include = val; });
+        renderBndList(); drawBoundary(); setBndButtons();
+      };
+      document.getElementById("btn-bnd-all").onclick = () => setBndAll(true);
+      document.getElementById("btn-bnd-none").onclick = () => setBndAll(false);
+      document.getElementById("bnd-search").addEventListener("input", (e) => {
+        bndFilter = e.target.value.trim().toLowerCase();
+        renderBndList();
+      });
+      document.getElementById("bnd-file").addEventListener("change", async (e) => {
+        const file = e.target.files?.[0]; if (!file) return;
+        try {
+          boundaryFeatures = featuresFromGeojson(JSON.parse(await file.text()));
+          if (!boundaryFeatures.length) {
+            bndStatus.textContent = "no Polygon/MultiPolygon found in that file";
+            bndListEl.innerHTML = ""; bndCtlEl.classList.remove("on"); setBndButtons(); return;
+          }
+          drawBoundary(); renderBndList();
+          fitBoundary(boundaryFeatures.map((f) => f.ring));
+          const pts = boundaryFeatures.reduce((n, f) => n + f.ring.length, 0);
+          bndStatus.innerHTML = `boundary loaded — <b>${boundaryFeatures.length}</b> feature(s), ${pts} pts total ` +
+            `<span style="opacity:.6">(untick any to exclude)</span>`;
+          setBndButtons();
+        } catch (err) { bndStatus.textContent = "parse failed: " + err.message; }
+        e.target.value = ""; // let the same file be re-picked
+      });
+      document.getElementById("btn-clear-bnd").onclick = () => {
+        boundaryFeatures = [];
+        bndListEl.innerHTML = "";
+        bndCtlEl.classList.remove("on");
+        bndFilter = ""; document.getElementById("bnd-search").value = "";
+        map.getSource("boundary")?.setData({ type: "FeatureCollection", features: [] });
+        bndStatus.textContent = "no boundary loaded";
+        setBndButtons();
+      };
+
+      // -- fetch ROADS within the imported boundary (poly, not the viewport) --
+      document.getElementById("btn-fetch-roads-bnd").onclick = async () => {
+        const rings = includedRings();
+        if (!rings.length) return;
+        const staged = Object.keys(pendingEdits).length;
+        if (staged && !confirm(`${staged} staged (un-submitted) edit(s) will be discarded ` +
+          `when you load a new area. Continue?`)) return;
+        const doFetch = async (force) => {
+          const resp = await fetch("/api/fetch", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ polys: rings, force }),
+          }).then((r) => r.json());
+          if (resp.needsConfirm) {
+            if (!confirm(`You edited ${resp.pendingModified} way(s) in this tool ` +
+              `(current.osm still marks them action="modify"). Un-uploaded edits are ` +
+              `discarded on fetch. Fetch anyway?`)) { batchStatus.textContent = "fetch cancelled"; return; }
+            return doFetch(true);
+          }
+          if (resp.error) { batchStatus.textContent = "fetch failed: " + resp.error; return; }
+          Object.keys(pendingEdits).forEach((k) => delete pendingEdits[k]);
+          refreshStaged(); curVersion = resp.version;
+          await reloadSources(resp.version);
+          batchStatus.textContent = `fetched roads in boundary (${rings.length} feature[s]) — ${resp.counts?.lanes ?? "?"} lanes`;
+        };
+        batchStatus.textContent = `fetching roads within ${rings.length} boundary feature(s)…`;
+        try { await doFetch(false); }
+        catch (err) { batchStatus.textContent = "fetch failed: " + err.message; }
+      };
+
+      // -- fetch BUILDINGS within the imported boundary --
+      document.getElementById("btn-fetch-bldg-bnd").onclick = async () => {
+        const rings = includedRings();
+        if (!rings.length) return;
+        batchStatus.textContent = `fetching buildings within ${rings.length} boundary feature(s)…`;
+        try {
+          const resp = await fetch("/api/buildings", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ polys: rings }),
+          }).then((r) => r.json());
+          if (resp.error) { batchStatus.textContent = "buildings fetch failed: " + resp.error; return; }
+          const bd = await fetch(`data/buildings.geojson?v=${Date.now()}`).then((r) => r.json());
+          map.getSource("buildings")?.setData(shrinkBuildings(bd)); currentBuildings = bd;
+          document.getElementById("t-bldg").checked = true;
+          if (map.getLayer("buildings-3d")) map.setLayoutProperty("buildings-3d", "visibility", "visible");
+          batchStatus.textContent = `buildings loaded — ${resp.count} in boundary`;
+        } catch (err) { batchStatus.textContent = "buildings fetch failed: " + err.message; }
+      };
+
+      // -- download raw fetched data as GeoJSON, split road / building --------
+      const downloadGeojson = async (kind, filename) => {
+        batchStatus.textContent = `preparing ${filename}…`;
+        try {
+          const resp = await fetch(`/api/download?kind=${kind}`);
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            batchStatus.textContent = `download failed: ${err.error || resp.status}`;
+            return;
+          }
+          const blob = await resp.blob();
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = filename;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+          batchStatus.textContent = `downloaded ${filename} (${(blob.size / 1024).toFixed(0)} KB)`;
+        } catch (err) { batchStatus.textContent = "download failed: " + err.message; }
+      };
+      document.getElementById("btn-dl-roads").onclick = () => downloadGeojson("road", "roads.geojson");
+      document.getElementById("btn-dl-bldg").onclick = () => downloadGeojson("building", "buildings.geojson");
+
+      // -- bulk CSV file pickers (parse client-side, enable the run button) --
+      let bulkRoadRows = null, bulkBldgRows = null;
+      const wireBulkFile = (fileId, btnId, statusId, kind, store) => {
+        const st = document.getElementById(statusId), btn = document.getElementById(btnId);
+        document.getElementById(fileId).addEventListener("change", async (e) => {
+          const file = e.target.files?.[0]; if (!file) return;
+          try {
+            const { rows, error, remapped, dropped } = csvToRows(await file.text(), kind);
+            if (error) { st.textContent = "CSV error: " + error; btn.disabled = true; store(null); }
+            else if (!rows.length) { st.textContent = "no valid rows (need numeric id + >=1 tag)"; btn.disabled = true; store(null); }
+            else {
+              store(rows);
+              // never silently rewrite a user's columns — say what happened
+              const notes = [];
+              if (remapped?.length) notes.push(`renamed to OSM keys: ${remapped.join(", ")}`);
+              if (dropped?.length) notes.push(`ignored (not OSM tags): ${dropped.join(", ")}`);
+              st.innerHTML = `${file.name} — <b>${rows.length}</b> row(s) ready` +
+                (notes.length ? `<br><span style="opacity:.7">${notes.join(" · ")}</span>` : "");
+              btn.disabled = false;
+            }
+          } catch (err) { st.textContent = "read failed: " + err.message; btn.disabled = true; store(null); }
+          e.target.value = "";
+        });
+      };
+      wireBulkFile("bulk-road-file", "btn-bulk-road", "bulk-road-status", "road", (r) => (bulkRoadRows = r));
+      wireBulkFile("bulk-bldg-file", "btn-bulk-bldg", "bulk-bldg-status", "building", (r) => (bulkBldgRows = r));
+
+      // -- run a bulk update: fetch by id → apply tags → open a fresh JOSM layer --
+      // `statusEl` is the element to report into — the Batch tab passes its own
+      // per-kind status line, the building editor passes its editor status line.
+      const runBulk = async (kind, rows, statusEl) => {
+        const st = statusEl;
+        if (!rows || !rows.length) return;
+        batchStatus.textContent = "checking JOSM…";
+        const josmOk = await josmReachable();
+        if (!josmOk && !confirm(
+          "JOSM isn’t reachable (not running, or Remote Control off).\n\n" + JOSM_HELP + "\n\n" +
+          "The bulk .osm file is still written server-side — you can open it in JOSM via " +
+          "File → Open. Continue?")) {
+          batchStatus.textContent = "bulk cancelled — JOSM not reachable"; return;
+        }
+        st.textContent = `fetching ${rows.length} element(s) from OSM by id…`;
+        try {
+          const resp = await fetch("/api/bulk", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kind, rows }),
+          }).then((r) => r.json());
+          if (resp.error) { st.textContent = "bulk failed: " + resp.error; return resp; }
+          // buildings: refresh the 3D display layer in place
+          if (kind === "building" && resp.displayUpdated) {
+            const bd = await fetch(`data/buildings.geojson?v=${Date.now()}`).then((r) => r.json());
+            map.getSource("buildings")?.setData(shrinkBuildings(bd)); currentBuildings = bd;
+            document.getElementById("t-bldg").checked = true;
+            if (map.getLayer("buildings-3d")) map.setLayoutProperty("buildings-3d", "visibility", "visible");
+          }
+          // hand the SEPARATE per-kind file to a fresh JOSM layer (road/building never mix)
+          const fileUrl = `${window.location.origin}${resp.file}`;
+          const layerName = `hdmap bulk ${kind} ${new Date().toLocaleTimeString()}`;
+          const importUrl = `http://127.0.0.1:8111/import?new_layer=true` +
+            `&layer_name=${encodeURIComponent(layerName)}&url=${encodeURIComponent(fileUrl)}`;
+          if (josmOk) fetch(importUrl, { mode: "no-cors" }).catch(() => { });
+          const miss = resp.missing?.length ? ` — ${resp.missing.length} id(s) not in OSM` : "";
+          // a refusal must never be silent: the server skips elements whose tags
+          // contradict the kind (e.g. a road id sent as a building)
+          const skip = resp.skipped?.length
+            ? `<br><span style="color:#ffb4a2">⚠ skipped ${resp.skipped.length}: ` +
+              resp.skipped.map((s) => s.reason).join("; ") + `</span>`
+            : "";
+          st.innerHTML = `applied ${resp.matched}/${resp.total} ${kind}(s) ✓${miss}${skip}` +
+            (josmOk
+              ? `<br><span style="opacity:.6">opened JOSM layer “${layerName}” — review &amp; <b>Upload</b> it.</span>`
+              : `<br><span style="opacity:.6">JOSM not reachable — open <code>${resp.file}</code> via File → Open.</span>`);
+          batchStatus.textContent = "";
+          return resp; // callers (building submit) inspect matched/skipped/missing
+        } catch (err) { st.textContent = "bulk failed: " + err.message; }
+      };
+      document.getElementById("btn-bulk-road").onclick =
+        () => runBulk("road", bulkRoadRows, document.getElementById("bulk-road-status"));
+      document.getElementById("btn-bulk-bldg").onclick =
+        () => runBulk("building", bulkBldgRows, document.getElementById("bulk-bldg-status"));
+      window._runBulk = runBulk; // used by the building editor's "Push tags to JOSM"
 
       // ---- Reset to the committed default area (roadmap #7) ----
       // A reliable escape hatch: reload the known-good Pham Hung seed without a
@@ -1816,7 +2926,9 @@
           if (curVersion === null) {
             curVersion = info.v; // first sight — sources already loaded
             dot.style.background = "#2f9e5c";
-            txt.textContent = `live sync: on (${info.source || "?"})`;
+            // provenance of the data on screen, NOT a fetch-in-progress state —
+            // "on (overpass-fetch)" used to read like the tool was fetching right now
+            txt.textContent = `live sync: on · source: ${info.source || "?"}`;
           } else if (info.v !== curVersion) {
             curVersion = info.v;
             await reloadSources(info.v);

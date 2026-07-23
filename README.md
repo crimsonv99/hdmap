@@ -15,6 +15,11 @@ change, and hand a reviewed changeset to JOSM for upload.
 
 Default area: a patch of Hanoi around `21.036860, 105.780890`.
 
+Beyond the road pipeline it also fetches **buildings** as 3-D context (an independent
+layer you can height-edit), and has a **Batch** tab for working at scale — fetch inside
+an imported boundary, bulk-apply tags from a CSV to JOSM, and export the raw fetched
+data as GeoJSON. See **§6**.
+
 > **Scope: local single-user tool.** hdmap is a personal companion to JOSM. It keeps
 > all state in one `live/current.osm` file and talks to JOSM over `127.0.0.1`, so it
 > is meant to be run **locally by one editor at a time**. It is *not* designed to be
@@ -57,6 +62,32 @@ Key pieces of logic:
   `width`, sidewalk/kerb tags, etc., infers what it isn't told, and outputs real
   polygons + `allowed_turns` per lane. `override_driving_side: "right"` is set for
   Vietnam. Widths are **inferred** where OSM doesn't tag them (see Notes).
+- **Road width & paint by highway class.** Out of the box osm2streets barely
+  differentiates classes — it **ignores the `width` tag** entirely, its only width
+  lever is the `lanes` *count* (3 m per driving lane, 2 m on a `service` road), and
+  its only built-in class rule is *service = 2 m vs everything-else = 3 m* — so an
+  untagged residential, tertiary, secondary and primary all render at an identical
+  6 m. To give roads a width that reads by class, `prepareRoads()` in
+  [`build.mjs`](build.mjs) injects a default `lanes` count per class into an
+  **in-memory** copy of the OSM *before* osm2streets runs (`LANES_BY_CLASS`:
+  secondary/primary → 4 = 12 m, trunk/motorway → 6 = 18 m; service/residential/
+  tertiary keep the 2-lane default). Two hard rules: **even counts only** (an odd
+  count makes osm2streets split the carriageway asymmetrically, so the centre line
+  lands off-centre), and **only widen the genuinely-wide classes** — injecting a
+  two-way multi-lane default onto an untagged segment of a road that's really a
+  *one-way dual carriageway* (common for city arterials) would invent a back lane,
+  a yellow centre line and a width bulge. A way that **already tags** `lanes` /
+  `oneway` / `lanes:forward|backward` is never touched, so surveyed data always
+  wins. The injection is memory-only — it **never** reaches `live/current.osm`, so
+  it can't pollute real OSM data or a JOSM upload; it's a rendering-inference layer,
+  same honesty as inferred widths and building heights.
+- **Bare-asphalt classes.** Small access roads (`NO_LANE_LINE_CLASSES` = `service`,
+  `track`) render with **no painted markings at all** — centre line, lane separators
+  *and* turn arrows inside them are dropped (they have no road paint in reality).
+  Since osm2streets' markings carry no back-reference to their road, each marking's
+  class is resolved by point-in-polygon against the road polygons (reusing the same
+  bbox-precomputed machinery as the one-way centre-line filter). Add a class to that
+  one set to strip all three kinds of paint from it at once.
 - **Turn arrows are ours, not osm2streets'.** osm2streets v0.1.4 only paints
   *straight* arrows. So we drop those and, per driving lane, emit a single arrow
   near the intersection end (the marking farthest downstream along the lane's
@@ -120,6 +151,31 @@ There are **three entry points**; pick the one that matches what you want to do.
 > Run **either** `watch.mjs` **or** `server.mjs` against `current.osm`, not both —
 > they'd fight over the same file.
 
+### Starting / restarting the tool: `./restart.sh`
+
+For the normal editor mode you don't need to remember any of the above — there's a
+one-command helper:
+
+```bash
+cd hdmap
+./restart.sh            # stop if running, then start  ← the usual one
+./restart.sh start      # start only
+./restart.sh stop       # stop it
+./restart.sh status     # is it up? shows pid + URL
+./restart.sh logs       # tail the live log
+PORT=9000 ./restart.sh  # use a different port (default 8097)
+```
+
+It frees the port properly (`SIGTERM` first so the server writes a clean `session-end`,
+force-kill only if it hangs — this is what prevents the `EADDRINUSE` failures), starts the
+server **detached** so it survives closing the terminal, waits for the first real `200`
+(startup runs an osm2streets rebuild, so it takes a few seconds) instead of a blind sleep,
+and prints the last log lines if boot fails. It also checks for Node ≥ 18 and runs
+`npm install` if `node_modules` is missing. Stdout goes to `logs/server-stdout.log`.
+
+> It survives closing the terminal, but **not a machine reboot** — just run
+> `./restart.sh` again after one.
+
 **JOSM** (external, for the editing flows) must be installed and running with
 **Remote Control enabled** (Edit → Preferences → Remote Control → *Enable remote
 control*) — that's how the tool hands edits to JOSM over `127.0.0.1:8111` for review and
@@ -153,10 +209,22 @@ Viewer aids:
   background-coloured gap). Only `MapEdge` data-boundary caps stay hidden.
   (Data comes from each junction's osm2streets `control` / `intersection_kind`.)
 - Toggle Lanes / Intersections / Markings / Turn lanes in the panel.
-- **Satellite imagery** toggle (Esri World Imagery, permitted for OSM tracing) with an
-  **HD opacity** slider — fade the lane polygons to trace real painted lines from aerial.
-- **Basemap:** empty ground renders as a soft grass/land tone (not black) so roads,
-  markings, and turn tints read like a real terrain map.
+- **Basemap picker** (the **▤** button, bottom-right). A list of free backdrops you can
+  switch between without a style reload — *None*, **Esri World Imagery** (satellite),
+  OSM Carto, OpenTopoMap, Carto Positron, Carto Dark Matter, Esri Topographic. The choice
+  is remembered (`localStorage`). Only entries marked **traceable** in the list may be
+  used as a **source for tracing new geometry** into OSM — of the ones offered that's
+  **Esri World Imagery** only; the OSM-rendered and topo layers are *renderings*, not
+  imagery, and copying from them is not permitted.
+- **HD opacity** slider, always visible at the **bottom centre**. Fades the lane
+  polygons *and* the 3-D buildings (with a live `%` readout) so you can trace real
+  painted lines off the imagery underneath.
+- **Empty ground** renders as a soft grass/land tone (not black) so roads, markings, and
+  turn tints read like a real terrain map.
+- **Minimize the panel.** The **⌃** button in the panel header collapses the whole tool
+  to a single title row, handing the map the full screen; **⌄** restores it. Nothing is
+  unmounted — staged edits, the active tab, and scroll position all survive — and the
+  state is remembered across reloads.
 - **Hover = blue, select = yellow** — light tint + outline so lane/marking/arrow
   detail underneath stays visible. Highlight covers every lane of the clicked way
   (including ways osm2streets has fused into a single road — see Notes).
@@ -167,6 +235,10 @@ Viewer aids:
 - A **lane-tag validator** runs live in the editor panel (non-blocking): flags
   `turn:lanes` count ≠ `lanes`, `oneway=yes` with `lanes:backward`,
   `lanes:forward + lanes:backward ≠ lanes`, unknown turn tokens, non-numeric width.
+- **Double-click to copy a coordinate.** Double-click anywhere on the map to copy the
+  point under the cursor to the clipboard as `lat, lng` (same order/precision the **Go**
+  box accepts), with a small toast to confirm. Default double-click-zoom is disabled so
+  the double-click is a pure copy.
 
 ---
 
@@ -218,8 +290,11 @@ Split handoffs — the tool probes for it and warns if it's off (see Step 3).
 ```
 
 ```bash
-node server.mjs         # viewer + /api/{way,node,fetch,reset,rebuild-local,clear-modified,changeset}
-# open http://localhost:8097/index.html   (or the autoPort port from launch.json)
+./restart.sh            # recommended — see §2 (stop/start/status/logs, waits for readiness)
+#   or directly:
+node server.mjs         # viewer + /api/{way,node,fetch,buildings,building,bulk,download,
+                        #                reset,rebuild-local,clear-modified,changeset}
+# open http://localhost:8097/   (PORT env overrides the default 8097)
 ```
 
 **Deterministic startup.** The tool always **boots to a fixed area/view** — the Pham
@@ -355,7 +430,119 @@ background like a submit. (In `server.mjs` mode this is the manual equivalent of
 
 ---
 
-## 6. Files
+## 6. Buildings & batch tools
+
+Beyond the road pipeline, the panel has two more tabs — **Building** and **Batch** —
+for 3-D context and for working over many features at once.
+
+### Building tab — 3-D context extrusions
+
+Fetch nearby **buildings** as an independent 3-D layer for spatial context while you
+edit roads. Buildings are **decoupled** from the osm2streets / JOSM road pipeline: they
+live only in `data/buildings.geojson`, never in `current.osm` or a changeset — so a
+building edit never reshapes roads and never lands in a road changeset.
+
+- **⤓ Fetch buildings (this view)** pulls **both** `way["building"]` and
+  `relation["building"]` for the map bbox (`POST /api/buildings`) and polygonizes them.
+  Heights are **inferred** in `buildingsFromOsm` — `height` tag →
+  `building:levels × 3 m` (`LEVEL_M`) → `6 m` default (`DEFAULT_HEIGHT_M`) — so the
+  extrusions read as HD but are estimates, not survey. A **base** is also read
+  (`min_height` → `building:min_level × 3 m` → `0`) and drives `fill-extrusion-base`, so
+  a raised/stacked part sits at the right elevation. Turn on **3-D view** (the tilt
+  toggle) to see them rise.
+- **Multipolygon relations are supported.** A building mapped as a
+  `type=multipolygon` / `type=building` **relation** — the usual case for a courtyard
+  block, or any building whose tags live on the relation and not on its member ways —
+  is assembled properly: member ways are **chained end-to-end by shared node** into
+  closed rings (handles reversed and out-of-order segments), `inner` rings are assigned
+  to the `outer` that contains them (ray-casting) and become real **holes**, and a
+  relation with several outers becomes a `MultiPolygon`. Member ways consumed by a
+  relation are **not drawn again** on their own, so nothing double-renders.
+- **Every feature carries its `osm_type`.** OSM ids are only unique *per element type* —
+  way `123` and relation `123` are different objects — so each building records whether
+  it is a `way` or a `relation`, and selection, editing, staging, and bulk all match on
+  the **(type, id)** pair. This is what stops an edit meant for a building relation from
+  landing on an unrelated way (see the safety guard under Batch).
+- **`height_source` provenance.** Each building records where its height came from —
+  `tag` (an actual `height`), `levels` (derived from `building:levels`), or `default`
+  (the flat 6 m fallback). Worth checking before you upload: on a typical fetch the vast
+  majority are `default`, i.e. tool guesses, and mass-uploading those is exactly the kind
+  of edit the [automated-edits code of conduct](https://wiki.openstreetmap.org/wiki/Automated_edits_code_of_conduct)
+  is about. It is an **internal** field — never written to OSM.
+- **Click a building → edit → stage → submit**, the same two-step flow as roads. Editing
+  a building stages it into `pendingBuildings` (keyed `type/id`), tints it **magenta**,
+  and lists it as a removable row; **Submit** then pushes every staged building through
+  the bulk path into a fresh **JOSM** layer for review and upload. The local preview
+  patches `data/buildings.geojson` in place (`POST /api/building`) so the extrusion
+  updates immediately, but that is **preview only** — as with roads, the actual OSM
+  upload is yours to make in JOSM.
+- **Partial Simple 3D Buildings support.** The parser accepts **`building:part`** ways
+  and honours `min_height` / `building:min_level` — the tiered-massing half of
+  [S3DB](detailed-building-tagging.md). One gap remains: the Overpass query doesn't ask
+  for `building:part`, so **parts are never fetched** (adding them would double-draw the
+  part on top of its outline; that needs an outline-suppression pass first). Sloped roofs
+  (`roof:shape`) are out of reach entirely — MapLibre `fill-extrusion` only does flat
+  tops; real roof shapes need a mesh renderer (three.js) or pre-baked glTF / 3D Tiles.
+  See [`detailed-building-tagging.md`](detailed-building-tagging.md) for the tag reference.
+- **Legibility.** Each footprint is tinted from a small palette keyed by its id and
+  shrunk slightly toward its own centroid, so touching blocks read as separate buildings
+  instead of one mass. The shrink is **render-only** — the stored geometry, the edits,
+  and the GeoJSON export all keep the true footprints.
+
+### Batch tab — boundary fetch, bulk CSV, GeoJSON export
+
+- **Boundary fetch.** Import a boundary **`.geojson`** (Polygon / MultiPolygon /
+  FeatureCollection) and fetch pulls only what's *inside* it instead of the map view —
+  handy for tiling by admin area or H3 cell. Each feature is listed with a checkbox
+  (untick to exclude); a **find id…** box filters the list and **Select all /
+  Deselect all** bulk-toggle the currently-matching rows (click a label to zoom to it).
+  **⤓ Fetch roads in boundary** / **⤓ Fetch buildings in boundary** send the included
+  rings as an Overpass `poly:` query (big rings are decimated to keep the query bounded).
+- **Bulk tag update → JOSM (CSV).** Supply a CSV of ids + tag columns; the tool fetches
+  exactly those elements **by id** (not a bbox), merges the CSV tags (blank cell = leave
+  unchanged), marks them `action="modify"`, and opens them in a fresh JOSM layer to
+  review + upload (`POST /api/bulk`). Roads and buildings write to **separate** files
+  (`live/bulk-road.osm` / `live/bulk-building.osm`), so the two never conflict and
+  neither disturbs `current.osm` or the seed. A building bulk run also refreshes the
+  3-D heights on the map.
+  - Road CSV header: `type,id,<tag>,…` (`type` = `way|node`, default `way`)
+  - Building CSV header: `id,osm_type,<tag>,…` (`osm_type` = `way|relation`) — exactly
+    what **Download → buildings.geojson** produces, so an export round-trips
+  - **Identity columns are never uploaded as tags.** `id` / `osm_type` / `osm_way_id` /
+    `type` / `height_source` are the tool's own columns, and are dropped (client- *and*
+    server-side) rather than written to OSM. A few render names are remapped to their
+    real OSM keys on the way in — `base → min_height`, `levels → building:levels`,
+    `min_level → building:min_level` — and the UI reports what it dropped and remapped
+    so nothing is silently changed.
+  - **Duplicate rows are de-duplicated** per `(type, id)` before the fetch (later rows
+    win on a repeated key), so the same element is fetched and modified once.
+  - **Type-mismatch guard.** Before touching anything, the server checks each element's
+    real tags against the run's `kind` and **refuses** the mismatches: building tags onto
+    something tagged `highway`/`railway`/`waterway`/`aeroway`/`natural`, or road tags onto
+    a building. Refused rows come back in `skipped[]` with the reason (shown in orange in
+    the UI) and the rest still go through. This exists because ids collide across types —
+    a stale `type=way` on what is really a relation once wrote a `building=school` onto an
+    unrelated residential road.
+  - **Bulk cannot delete tags** (a blank cell means *unchanged*, not *remove*), and there
+    is no row cap or chunking yet — a several-thousand-row CSV goes to Overpass in one
+    request. And read the automated-edits note in §8 before uploading a large mechanical
+    run.
+- **Download raw OSM → GeoJSON.** Save the last-fetched data as GeoJSON, **split by
+  type** (`GET /api/download?kind=road|building`): **roads.geojson** — one LineString
+  per highway way carrying `osm_way_id` + all OSM tags (the *raw* fetched geometry, not
+  the osm2streets-exploded lanes/markings) — and **buildings.geojson** — the true
+  building polygons (unshrunk), exported with **real OSM tag keys** (`height`,
+  `min_height`, `building:levels`, `building:min_level`, `building`, `name`) plus the
+  `id` / `osm_type` identity columns and `height_source`. That's deliberate: the export
+  is meant to be edited in a spreadsheet and fed **straight back into the bulk CSV**, so
+  it must not carry the tool's internal render names.
+  > The two downloads can describe **different areas** — roads come from the last
+  > `data/raw.osm` fetch, buildings from the last `data/buildings.geojson` fetch (plus any
+  > bulk upserts). Fetch both for the same view if you want them to line up.
+
+---
+
+## 7. Files
 
 | File           | Purpose |
 |----------------|---------|
@@ -365,8 +552,12 @@ background like a submit. (In `server.mjs` mode this is the manual equivalent of
 | `watch.mjs`    | Preview mode: watch `live/current.osm` (JOSM save) → rebuild on change |
 | `server.mjs`   | Editor mode: serve viewer + the `/api/*` endpoints (see table below); writes edits to `current.osm` as `action="modify"` (changeset rebuild forked to `rebuild.mjs`) |
 | `index.html`   | MapLibre GL viewer — styling, layer toggles, live-sync poll, staging tag editor, JOSM import |
+| `restart.sh`   | Start / stop / restart / status helper for `server.mjs` (§2) — frees the port cleanly, starts detached, waits for readiness |
+| `detailed-building-tagging.md` | OSM tag guideline for mapping **detailed 3D buildings** (Simple 3D Buildings: `building:part`, `height`/`min_height`, `roof:*`) |
 | `live/`        | `current.osm` — the working OSM file (watched / edited); auto-seeded from the default on first run. **gitignored** |
 | `data/*.geojson`, `data/{raw,meta,version}` | Generated HD layers + stamps — **gitignored**. `server.mjs` rebuilds them on startup from the seed, and `generate.mjs` regenerates them, so they're never committed (they'd only drift) |
+| `data/buildings.geojson` | The decoupled 3-D building layer (§6) — fetched/edited independently of the road pipeline; **gitignored** |
+| `live/bulk-{road,building}.osm` | Per-kind output of a bulk CSV run (§6), opened in a fresh JOSM layer; separate files so road/building runs never conflict. **gitignored** |
 | `data/default.osm` | **The one committed data file** — the default-area seed (Pham Hung). Powers deterministic startup + **Reset to default area**; a fresh checkout rebuilds everything else from it. Fetch never overwrites it |
 | `logs/`        | Per-session action logs (`session-<start>.log`) — not committed |
 | `plan.md`      | The staging-editor design this workflow implements |
@@ -397,13 +588,26 @@ Backend endpoints (`server.mjs`):
 | `POST /api/clear-modified` | strip `action="modify"` markers from `current.osm` after you've uploaded in JOSM (tags untouched → no rebuild); returns `{cleared}` |
 | `POST /api/changeset {edits:{key:{k:v}}}` | batch-apply staged edits (key = `way:<id>` / `node:<id>`), mark `action="modify"`, rebuild |
 | `POST /api/edit {wayId, tags}` | single-way edit (legacy; superseded by the staging flow) |
+| `POST /api/buildings {bbox \| polys}` | fetch `way["building"]` **+ `relation["building"]`** for a bbox or boundary rings → polygonize (multipolygon rings stitched, holes assigned) → `data/buildings.geojson` (decoupled layer, §6) |
+| `POST /api/building {id, osm_type?, height?, base?, props?}` | patch one building's inferred height/props in `buildings.geojson` in place, matched on **(type, id)** (no rebuild, no version bump) — local preview for the staging flow |
+| `POST /api/bulk {kind, rows:[{id,type?,tags}]}` | fetch elements **by id** (ways, nodes *and* relations), de-dupe, **refuse type mismatches**, merge tags, mark `action="modify"`, write `live/bulk-<kind>.osm` for JOSM (§6). Returns `{matched, missing, skipped, total}`. The CSV is parsed **client-side** into `rows` |
+| `GET  /api/download?kind=road\|building` | download last-fetched data as GeoJSON — raw highway LineStrings, or building polygons re-keyed to **real OSM tags** for a clean bulk-CSV round-trip (§6) |
+
+`/api/fetch` and `/api/buildings` also accept `{ polys: [[[lng,lat],…]] }` (boundary
+rings) in place of `bbox`, which is how the Batch tab's boundary fetch works.
 
 ---
 
-## 7. Notes / next steps
+## 8. Notes / next steps
 
-- **Widths are inferred.** OSM rarely tags lane width, so osm2streets estimates from
-  lane type. The map looks HD but widths are educated guesses, not survey.
+- **Widths are inferred — twice over.** OSM rarely tags lane width, so osm2streets
+  estimates from lane type; on top of that we inject a per-class default `lanes`
+  count so higher road classes read wider (§1, *Road width & paint by highway
+  class*). Both are educated guesses, not survey — a two-way multi-lane default on
+  an untagged segment of a one-way arterial can still look wrong, and the honest fix
+  is to tag that way's real `oneway`/`lanes`. To dial the hierarchy up or down (or
+  off), edit `LANES_BY_CLASS` / `NO_LANE_LINE_CLASSES` at the top of
+  [`build.mjs`](build.mjs).
 - **osm2streets merges ways/nodes.** Adjacent OSM ways (or nodes) that form one
   continuous road are fused into a single Road/Intersection, so a lane can carry
   several `osm_way_ids` (e.g. `[a, b]`) and an intersection several `osm_node_ids`.
@@ -423,6 +627,13 @@ Backend endpoints (`server.mjs`):
   restrictions, routes, or any relation editing, use **JOSM directly**. (Because
   parent relations aren't loaded, JOSM may also flag a modified way's relations as
   incomplete on upload — that's expected; it doesn't affect the tag change itself.)
+  *Exception:* the **building** pipeline does read `relation["building"]` and can put a
+  building relation's own **tags** in a bulk changeset (§6) — but even there it only
+  edits tags, never relation membership or geometry.
+- **Bulk never touches geometry.** If JOSM's validator flags overlapping buildings,
+  self-crossing ways, or missing companion tags after a bulk run, those are **pre-existing
+  problems in the OSM data** you fetched, not something the tool introduced — it only ever
+  merges tag values onto elements it fetched verbatim.
 - **Bulk edits.** Lane-tag edits at scale fall under OSM's
   [automated-edits code of conduct](https://wiki.openstreetmap.org/wiki/Automated_edits_code_of_conduct):
   keep each changeset small, scoped, and documented, and discuss large mechanical

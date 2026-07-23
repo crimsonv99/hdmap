@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, extname, normalize } from "node:path";
 import { fork } from "node:child_process";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
-import { initEngine, buildingsFromOsm } from "./build.mjs";
+import { initEngine, buildingsFromOsm, roadsFromOsm } from "./build.mjs";
 import { rebuildFiles } from "./rebuild.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -86,11 +86,14 @@ const OVERPASS_ENDPOINTS = (process.env.OVERPASS_ENDPOINTS
       "https://overpass.kumi.systems/api/interpreter",
     ]);
 const OVERPASS_UA = "hdmap-demo/0.1 (osm2streets HD basemap experiment)";
-async function overpassFetch(query) {
+// `timeoutMs` must exceed the [timeout:N] in the query itself, or we abort a
+// request Overpass is still legitimately working on — a boundary fetch asking for
+// 180s was previously killed at 50s, so its longer budget could never be used.
+async function overpassFetch(query, timeoutMs = 70000) {
   let lastErr = "no endpoints";
   for (const ep of OVERPASS_ENDPOINTS) {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 50000); // don't hang on a dead mirror
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs); // don't hang on a dead mirror
     try {
       const r = await fetch(ep, {
         method: "POST",
@@ -185,6 +188,45 @@ function wayTags(way) {
     tags[nodes[i].getAttribute("k")] = nodes[i].getAttribute("v");
   return tags;
 }
+// MERGE a tag set onto an element: existing <tag>s not named in `tags` are kept;
+// named ones are updated/added. An empty/null value means "leave unchanged"
+// (skip) — bulk CSV cells left blank must not wipe a tag. (Full replacement is
+// /api/edit + /api/changeset, which the interactive editor uses instead.)
+// The tool's own GeoJSON export carries internal property names (osm_way_id,
+// osm_type, base, min_level). They are NOT OSM tags, so if a CSV round-trips them
+// they must never reach OSM. The client rewrites/strips them; this is the net that
+// catches a hand-made CSV too.
+const NON_OSM_KEYS = new Set(["osm_way_id", "osm_type", "osm_id", "base", "min_level", "height_source"]);
+function mergeTags(doc, el, tags) {
+  const existing = {};
+  const tagEls = Array.from(el.getElementsByTagName("tag"));
+  for (const t of tagEls) existing[t.getAttribute("k")] = t;
+  for (const [k, v] of Object.entries(tags || {})) {
+    if (k === "" || v == null || String(v).trim() === "") continue;
+    if (NON_OSM_KEYS.has(k.toLowerCase())) continue; // internal, never upload
+    if (existing[k]) existing[k].setAttribute("v", String(v));
+    else {
+      const t = doc.createElement("tag");
+      t.setAttribute("k", k);
+      t.setAttribute("v", String(v));
+      el.appendChild(t);
+    }
+  }
+}
+// Build an Overpass poly filter body ("lat lon lat lon …") from a boundary ring
+// given as [[lng,lat], …]. Every coord is Number()-validated so nothing from the
+// uploaded GeoJSON is interpolated verbatim into the Overpass QL string.
+function polyString(coords) {
+  if (!Array.isArray(coords) || coords.length < 3)
+    throw new Error("boundary needs a ring of >= 3 coords");
+  const parts = [];
+  for (const c of coords) {
+    const lng = Number(c?.[0]), lat = Number(c?.[1]);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) throw new Error("bad boundary coord");
+    parts.push(`${lat} ${lng}`);
+  }
+  return parts.join(" ");
+}
 
 function sendJSON(res, code, obj) {
   const body = JSON.stringify(obj);
@@ -219,6 +261,64 @@ const server = createServer((req, res) => {
       const node = findNode(loadDoc(), id);
       if (!node) return sendJSON(res, 404, { error: `node ${id} not found` });
       return sendJSON(res, 200, { id, tags: wayTags(node) }); // wayTags reads <tag> children — works for nodes too
+    } catch (e) { return sendJSON(res, 500, { error: e.message }); }
+  }
+
+  // --- API: download raw fetched data as GeoJSON (split road / building) ------
+  // Returns the LAST-fetched OSM data as a GeoJSON FeatureCollection, one file
+  // per kind so the two never mix:
+  //   ?kind=road     -> highway ways from data/raw.osm as LineStrings (raw geom,
+  //                     not the osm2streets-exploded lanes) + all their tags
+  //   ?kind=building -> data/buildings.geojson (the polygonized building layer)
+  // Sent as an attachment so the browser saves it straight to a .geojson file.
+  if (req.method === "GET" && url.pathname === "/api/download") {
+    try {
+      const kind = url.searchParams.get("kind");
+      let fc, filename;
+      if (kind === "road") {
+        const raw = join(dataDir, "raw.osm");
+        if (!existsSync(raw)) return sendJSON(res, 404, { error: "no raw.osm — fetch roads first" });
+        fc = roadsFromOsm(readFileSync(raw, "utf8"));
+        filename = "roads.geojson";
+      } else if (kind === "building") {
+        const file = join(dataDir, "buildings.geojson");
+        if (!existsSync(file)) return sendJSON(res, 404, { error: "no buildings.geojson — fetch buildings first" });
+        const raw = JSON.parse(readFileSync(file, "utf8"));
+        // Export with REAL OSM tag keys, not the tool's internal render property
+        // names. The display layer needs `base`/`levels` for fill-extrusion, but a
+        // download is meant to be edited and fed straight back into the bulk CSV —
+        // and `base=0` / `osm_type=way` are not OSM tags, so exporting them made the
+        // round-trip upload junk. `id` + `osm_type` stay as the identity columns the
+        // bulk CSV reads (osm_type is the element type, never a tag).
+        fc = {
+          type: "FeatureCollection",
+          features: (raw.features || []).map((f) => {
+            const p = f.properties || {};
+            const out = { id: p.osm_way_id, osm_type: p.osm_type || "way" };
+            if (p.height != null) out.height = p.height;
+            if (p.base) out.min_height = p.base;                       // omit a 0 base
+            if (p.levels != null) out["building:levels"] = p.levels;
+            if (p.min_level != null) out["building:min_level"] = p.min_level;
+            if (p.building != null) out.building = p.building;
+            if (p.name != null) out.name = p.name;
+            // "tag" = real OSM value; "levels"/"default" = estimated by this tool.
+            // Filter on this before bulk-uploading heights back to OSM.
+            out.height_source = p.height_source || "unknown";
+            return { ...f, properties: out };
+          }),
+        };
+        filename = "buildings.geojson";
+      } else {
+        return sendJSON(res, 400, { error: "need ?kind=road|building" });
+      }
+      log("download", { kind, features: fc.features.length });
+      const out = JSON.stringify(fc);
+      res.writeHead(200, {
+        "Content-Type": "application/geo+json",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Length": Buffer.byteLength(out),
+      });
+      return res.end(out);
     } catch (e) { return sendJSON(res, 500, { error: e.message }); }
   }
 
@@ -264,9 +364,15 @@ const server = createServer((req, res) => {
     req.on("data", (c) => (body += c));
     req.on("end", async () => {
       try {
-        const { bbox, force } = JSON.parse(body || "{}");
-        if (!Array.isArray(bbox) || bbox.length !== 4)
-          return sendJSON(res, 400, { error: "need { bbox: [w, s, e, n] }" });
+        const { bbox, force, poly, polys } = JSON.parse(body || "{}");
+        // Area may be given as a viewport bbox OR one/many imported boundary rings
+        // (poly = one [[lng,lat],…] ring; polys = an array of rings — e.g. every
+        // feature in a boundary GeoJSON). Rings fetch strictly WITHIN the boundary.
+        let ringStrs = null;
+        const ringSrc = Array.isArray(polys) && polys.length ? polys : (poly ? [poly] : null);
+        if (ringSrc) { try { ringStrs = ringSrc.map(polyString); } catch (e) { return sendJSON(res, 400, { error: e.message }); } }
+        if (!ringStrs && (!Array.isArray(bbox) || bbox.length !== 4))
+          return sendJSON(res, 400, { error: "need { bbox: [w, s, e, n] } or { polys: [[[lng,lat],…]] }" });
         // GUARD: a fetch overwrites current.osm. If it still holds un-uploaded
         // edits (action="modify"), refuse unless the client confirms (force).
         // This is exactly what silently dropped the 2 Pham Hung edits before.
@@ -279,15 +385,18 @@ const server = createServer((req, res) => {
             return sendJSON(res, 409, { needsConfirm: true, pendingModified: pending });
           }
         }
-        log("fetch", { bbox, force: !!force });
-        const [w, s, e, n] = bbox;
-        // [timeout:60] = explicit server-side budget; overpassFetch tries mirrors
-        // in turn so one overloaded instance (504) doesn't fail the whole fetch.
+        log("fetch", { bbox, polys: ringStrs ? ringStrs.length : 0, force: !!force });
+        // [timeout] = explicit server-side budget; overpassFetch tries mirrors in
+        // turn so one overloaded instance (504) doesn't fail the whole fetch.
         // highway-only: roads go through osm2streets. Buildings are a SEPARATE,
         // independent layer (POST /api/buildings) so a road fetch never touches
-        // them and vice-versa.
-        const query = `[timeout:60][bbox:${s},${w},${n},${e}];(way["highway"];>;);out meta;`;
-        const osmXml = await overpassFetch(query);
+        // them and vice-versa. Rings clip to the boundary (union of all polygons);
+        // bbox uses the view. (._;>;) then pulls child nodes for the whole set.
+        const query = ringStrs
+          ? `[timeout:180];(${ringStrs.map((s) => `way["highway"](poly:"${s}");`).join("")});(._;>;);out meta;`
+          : (() => { const [w, s, e, n] = bbox; return `[timeout:60][bbox:${s},${w},${n},${e}];(way["highway"];>;);out meta;`; })();
+        // boundary queries ask Overpass for [timeout:180], bbox for [timeout:60]
+        const osmXml = await overpassFetch(query, ringStrs ? 190000 : 70000);
         killBgRebuild("fetch"); // a stale changeset rebuild must not clobber this area
         writeFileSync(join(dataDir, "raw.osm"), osmXml);
         writeFileSync(osmFile, osmXml);
@@ -309,17 +418,230 @@ const server = createServer((req, res) => {
     req.on("data", (c) => (body += c));
     req.on("end", async () => {
       try {
-        const { bbox } = JSON.parse(body || "{}");
-        if (!Array.isArray(bbox) || bbox.length !== 4)
-          return sendJSON(res, 400, { error: "need { bbox: [w, s, e, n] }" });
-        const [w, s, e, n] = bbox;
-        log("buildings-fetch", { bbox });
-        const query = `[timeout:60][bbox:${s},${w},${n},${e}];(way["building"];>;);out;`;
-        const osmXml = await overpassFetch(query);
+        const { bbox, poly, polys } = JSON.parse(body || "{}");
+        let ringStrs = null;
+        const ringSrc = Array.isArray(polys) && polys.length ? polys : (poly ? [poly] : null);
+        if (ringSrc) { try { ringStrs = ringSrc.map(polyString); } catch (e) { return sendJSON(res, 400, { error: e.message }); } }
+        if (!ringStrs && (!Array.isArray(bbox) || bbox.length !== 4))
+          return sendJSON(res, 400, { error: "need { bbox: [w, s, e, n] } or { polys: [[[lng,lat],…]] }" });
+        log("buildings-fetch", { bbox, polys: ringStrs ? ringStrs.length : 0 });
+        // Buildings come in TWO shapes and we need both, or courtyard buildings
+        // (schools/factories mapped as multipolygon relations, whose member ways are
+        // untagged) render as nothing. `(._;>;)` pulls each relation's member ways
+        // and their nodes so the rings can be assembled.
+        const query = ringStrs
+          ? `[timeout:180];(${ringStrs.map((s) =>
+              `way["building"](poly:"${s}");relation["building"](poly:"${s}");`).join("")});(._;>;);out;`
+          : (() => {
+              const [w, s, e, n] = bbox;
+              return `[timeout:60][bbox:${s},${w},${n},${e}];` +
+                `(way["building"];relation["building"];);(._;>;);out;`;
+            })();
+        const osmXml = await overpassFetch(query, ringStrs ? 190000 : 70000);
         const fc = buildingsFromOsm(osmXml);
         writeFileSync(join(dataDir, "buildings.geojson"), JSON.stringify(fc));
         log("buildings-fetch-done", { count: fc.features.length });
         return sendJSON(res, 200, { ok: true, count: fc.features.length });
+      } catch (e) { return sendJSON(res, 500, { error: e.message }); }
+    });
+    return;
+  }
+
+  // --- API: edit ONE building's inferred height/base (independent layer) ------
+  // Buildings are a decoupled visual layer — they're NOT in current.osm or the
+  // JOSM changeset pipeline — so a building edit just patches the matched feature
+  // in data/buildings.geojson in place and rewrites it. No osm2streets rebuild,
+  // no version bump: the viewer updates the source client-side and this persists
+  // the change across reloads. (A later "Fetch buildings" re-pulls fresh OSM and
+  // overwrites, as expected.)
+  if (req.method === "POST" && url.pathname === "/api/building") {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      try {
+        const { id, type, height, base, props } = JSON.parse(body || "{}");
+        if (id == null) return sendJSON(res, 400, { error: "need { id }" });
+        const file = join(dataDir, "buildings.geojson");
+        if (!existsSync(file)) return sendJSON(res, 404, { error: "no buildings.geojson" });
+        const fc = JSON.parse(readFileSync(file, "utf8"));
+        // match on (type, id) — ids are unique per element type, so a way and a
+        // multipolygon relation can share the same number
+        const wantType = String(type || "way");
+        const f = fc.features.find((x) =>
+          String(x.properties?.osm_way_id) === String(id) &&
+          String(x.properties?.osm_type || "way") === wantType);
+        if (!f) return sendJSON(res, 404, { error: `building ${wantType}/${id} not found` });
+        if (Number.isFinite(height)) f.properties.height = height;
+        if (Number.isFinite(base)) f.properties.base = base;
+        if (props && typeof props === "object")
+          for (const [k, v] of Object.entries(props)) f.properties[k] = v;
+        writeFileSync(file, JSON.stringify(fc));
+        log("building-edit", { id, height, base });
+        return sendJSON(res, 200, { ok: true, id, height: f.properties.height, base: f.properties.base });
+      } catch (e) { return sendJSON(res, 500, { error: e.message }); }
+    });
+    return;
+  }
+
+  // --- API: BULK tag update from a CSV, by OSM id, handed to JOSM ------------
+  // Instead of editing one element at a time in the viewport, the user supplies a
+  // CSV of ids + tag columns. We fetch EXACTLY those elements from Overpass BY ID
+  // (not a bbox), MERGE the CSV tags onto them (blank cell = leave unchanged),
+  // mark them action="modify", and write a SEPARATE .osm file per kind:
+  //   road     -> live/bulk-road.osm
+  //   building -> live/bulk-building.osm
+  // Road and building runs never share a file, so the two never conflict (and a
+  // road bulk run never disturbs live/current.osm or the seed). The client then
+  // opens the file in its own fresh JOSM layer to review + upload. For buildings
+  // we ALSO refresh the display layer (data/buildings.geojson) so the new heights
+  // show on the map immediately, consistent with the decoupled building layer.
+  if (req.method === "POST" && url.pathname === "/api/bulk") {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", async () => {
+      try {
+        const { kind, rows } = JSON.parse(body || "{}");
+        if (kind !== "road" && kind !== "building")
+          return sendJSON(res, 400, { error: "need { kind: 'road' | 'building' }" });
+        if (!Array.isArray(rows) || !rows.length)
+          return sendJSON(res, 400, { error: "need non-empty rows[]" });
+
+        // Which OSM element a row refers to. Buildings are ways OR multipolygon
+        // relations (courtyard buildings tag the relation, not its member ways);
+        // roads are ways or nodes.
+        const elemType = (r) => {
+          const t = String(r?.type || "way").toLowerCase();
+          if (kind === "building") return t === "relation" ? "relation" : "way";
+          return t === "node" ? "node" : "way";
+        };
+        const wayIds = new Set(), nodeIds = new Set(), relIds = new Set();
+        for (const r of rows) {
+          const id = String(r?.id ?? "").trim();
+          if (!/^\d+$/.test(id)) continue;
+          const type = elemType(r);
+          if (type === "node") nodeIds.add(id);
+          else if (type === "relation") relIds.add(id);
+          else wayIds.add(id);
+        }
+        if (!wayIds.size && !nodeIds.size && !relIds.size)
+          return sendJSON(res, 400, { error: "no valid numeric ids in rows" });
+
+        const parts = [];
+        if (wayIds.size) parts.push(`way(id:${[...wayIds].join(",")});`);
+        if (nodeIds.size) parts.push(`node(id:${[...nodeIds].join(",")});`);
+        if (relIds.size) parts.push(`relation(id:${[...relIds].join(",")});`);
+        // (._;>;) pulls the ways' child nodes so JOSM has full geometry; out meta
+        // carries the version numbers an action="modify" upload requires.
+        const query = `[timeout:120];(${parts.join("")});(._;>;);out meta;`;
+        log("bulk-fetch", { kind, ways: wayIds.size, nodes: nodeIds.size });
+        const osmXml = await overpassFetch(query, 130000); // query asks [timeout:120]
+
+        const doc = new DOMParser().parseFromString(osmXml, "text/xml");
+        const wayById = {}, nodeById = {}, relById = {};
+        const wEls = doc.getElementsByTagName("way");
+        for (let i = 0; i < wEls.length; i++) wayById[wEls[i].getAttribute("id")] = wEls[i];
+        const nEls = doc.getElementsByTagName("node");
+        for (let i = 0; i < nEls.length; i++) nodeById[nEls[i].getAttribute("id")] = nEls[i];
+        const rEls = doc.getElementsByTagName("relation");
+        for (let i = 0; i < rEls.length; i++) relById[rEls[i].getAttribute("id")] = rEls[i];
+
+        // ---- SAFETY GUARD -----------------------------------------------------
+        // OSM ids are only unique PER TYPE, so a wrong id/type (stale client, typo in
+        // a CSV, way-vs-relation mix-up) resolves to a REAL but unrelated object —
+        // e.g. way 13126086 is a residential road in Kansas while relation 13126086
+        // is a school in Hanoi. Blindly merging tags there would silently vandalise
+        // it. Refuse any element whose existing tags contradict the kind we're
+        // editing, and report it instead of modifying it.
+        const readElTags = (el) => {
+          const t = {};
+          const te = el.getElementsByTagName("tag");
+          for (let i = 0; i < te.length; i++) t[te[i].getAttribute("k")] = te[i].getAttribute("v");
+          return t;
+        };
+        const CONFLICTS_WITH_BUILDING = ["highway", "railway", "waterway", "aeroway", "natural"];
+        const mismatchReason = (el) => {
+          const t = readElTags(el);
+          const isBuilding = (t.building && t.building !== "no") ||
+            (t["building:part"] && t["building:part"] !== "no");
+          if (kind === "building") {
+            if (isBuilding) return null;
+            const bad = CONFLICTS_WITH_BUILDING.find((k) => t[k]);
+            if (bad) return `is a ${bad}=${t[bad]}, not a building`;
+            return null; // untagged//plain area — allowed (you may be adding building=*)
+          }
+          // kind === "road": don't paste road tags onto a building
+          if (isBuilding && !t.highway) return `is a building=${t.building}, not a road`;
+          return null;
+        };
+
+        // Collapse rows targeting the SAME element (same type+id) into one, later
+        // values winning. Without this, a CSV listing an id twice merged twice and
+        // reported matched=2 for a single object, overstating what was applied.
+        const byElem = new Map();
+        for (const r of rows) {
+          const id = String(r?.id ?? "").trim();
+          if (!/^\d+$/.test(id)) continue;
+          const key = `${elemType(r)}/${id}`;
+          const prev = byElem.get(key);
+          if (prev) prev.tags = { ...prev.tags, ...(r.tags || {}) };
+          else byElem.set(key, { id, type: elemType(r), tags: { ...(r.tags || {}) } });
+        }
+        const dedupedRows = [...byElem.values()];
+
+        let matched = 0; const missing = [], skipped = [];
+        for (const r of dedupedRows) {
+          const id = String(r?.id ?? "").trim();
+          if (!/^\d+$/.test(id)) continue;
+          const type = elemType(r);
+          const el = type === "node" ? nodeById[id] : type === "relation" ? relById[id] : wayById[id];
+          if (!el) { missing.push(id); continue; }
+          const why = mismatchReason(el);
+          if (why) { skipped.push({ id, type, reason: `${type} ${id} ${why}` }); continue; }
+          mergeTags(doc, el, r.tags || {});
+          el.setAttribute("action", "modify");
+          matched++;
+        }
+        if (skipped.length) log("bulk-skipped", { kind, skipped });
+        if (!matched)
+          return sendJSON(res, 404, {
+            error: skipped.length
+              ? `refused: ${skipped[0].reason}` + (skipped.length > 1 ? ` (+${skipped.length - 1} more)` : "")
+              : "none of the ids were found in OSM",
+            missing, skipped,
+          });
+
+        const outName = kind === "road" ? "bulk-road.osm" : "bulk-building.osm";
+        const serialized = new XMLSerializer().serializeToString(doc);
+        writeFileSync(join(liveDir, outName), serialized);
+
+        // buildings: also upsert the display layer so heights update on the map
+        let displayUpdated = 0;
+        if (kind === "building") {
+          try {
+            const fc = buildingsFromOsm(serialized); // heights recomputed from merged tags
+            const bf = join(dataDir, "buildings.geojson");
+            const cur = existsSync(bf)
+              ? JSON.parse(readFileSync(bf, "utf8"))
+              : { type: "FeatureCollection", features: [] };
+            // key by TYPE/id — way 123 and relation 123 are different buildings
+            const fkey = (f) => `${f.properties?.osm_type || "way"}/${f.properties?.osm_way_id}`;
+            const idx = new Map(cur.features.map((f, i) => [fkey(f), i]));
+            for (const f of fc.features) {
+              const k = fkey(f);
+              if (idx.has(k)) cur.features[idx.get(k)] = f;
+              else { idx.set(k, cur.features.length); cur.features.push(f); }
+              displayUpdated++;
+            }
+            writeFileSync(bf, JSON.stringify(cur));
+          } catch (e) { log("bulk-building-display-fail", { msg: e.message }); }
+        }
+
+        log("bulk-done", { kind, matched, missing: missing.length, skipped: skipped.length, displayUpdated });
+        return sendJSON(res, 200, {
+          ok: true, kind, matched, missing, skipped,
+          total: matched + missing.length + skipped.length,
+          file: `/live/${outName}`, displayUpdated,
+        });
       } catch (e) { return sendJSON(res, 500, { error: e.message }); }
     });
     return;
