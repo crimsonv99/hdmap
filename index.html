@@ -1182,10 +1182,11 @@
         },
         ...bandEdges("", ["<", LYR, 1]),     // ground / tunnel road casing
         // --- FILLS (drawn after all casings, so fills cover internal seams) ---
-        // Junction asphalt matches the Driving lane colour (#5b6270) so roads and
-        // intersections fuse into one surface instead of leaving a darker blob at
-        // every fork. Signalled junctions keep a warm accent (also flagged by the
-        // traffic-light icon); dead-ends barely recede.
+        // Junction asphalt is the SAME grey as the Driving lanes (#5b6270), so
+        // roads and junctions fuse into one continuous paved surface (like a
+        // hand-mapped street map) instead of leaving a coloured blob at every
+        // fork. Signalled junctions are shown by the traffic-light icon, not a
+        // fill tint — a warm-brown blob read as an alien shape against the grey.
         {
           id: "intersections", type: "fill", source: "intersections",
           // Fill everything except MapEdge (data-boundary caps). "Connection" nodes
@@ -1195,10 +1196,7 @@
           filter: ["!=", ["get", "intersection_kind"], "MapEdge"],
           layout: { "fill-sort-key": sortKey },
           paint: {
-            "fill-color": ["case",
-              ["==", ["get", "control"], "Signalled"], "#5c5340",         // traffic light → warm
-              ["==", ["get", "intersection_kind"], "Terminus"], "#545b68", // dead end → barely recedes
-              "#5b6270"],                                                   // fuse with road asphalt
+            "fill-color": "#5b6270", // one continuous asphalt surface
             "fill-opacity": 1
           }
         },
