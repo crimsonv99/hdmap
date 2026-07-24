@@ -22,16 +22,23 @@ set -euo pipefail
 cd "$(dirname "$0")"
 L=build/layers
 MAXZOOM=${MAXZOOM:-17}
-MARK_MINZOOM=${MARK_MINZOOM:-15}
+BASE_MINZOOM=${BASE_MINZOOM:-15}   # HD layers are hidden below the 2D->3D switch,
+MARK_MINZOOM=${MARK_MINZOOM:-16}   # so there's no point baking tiles below it.
 
 for f in lanes markings intersections turn_arrows buildings; do
   [ -s "$L/$f.ndjson" ] || { echo "missing/empty: $L/$f.ndjson (run bake-city.mjs first)"; exit 1; }
 done
 
-COMMON=(--force --drop-densest-as-needed --no-simplification-of-shared-nodes --preserve-input-order)
+# Keep ONLY the attributes the viewer actually reads (style + click popup); drop
+# everything else (osm_way_ids arrays, movements, and the dozens of name:*/addr:*
+# tags osmium put on water/green). This is a big size win with zero visual change.
+KEEP=(-y type -y layer -y allowed_turns -y width -y speed_limit -y control
+  -y intersection_kind -y bearing -y turns -y osm_way_id -y height -y base
+  -y height_source -y name -y levels)
+COMMON=(--force --drop-densest-as-needed --no-simplification-of-shared-nodes --preserve-input-order "${KEEP[@]}")
 
-echo "Baking BASE layers (water/green/lanes/intersections/buildings) z12-$MAXZOOM …"
-tippecanoe -o build/base.pmtiles "${COMMON[@]}" -Z12 -z"$MAXZOOM" \
+echo "Baking BASE layers (water/green/lanes/intersections/buildings) z$BASE_MINZOOM-$MAXZOOM …"
+tippecanoe -o build/base.pmtiles "${COMMON[@]}" -Z"$BASE_MINZOOM" -z"$MAXZOOM" \
   -L water:"$L/water.ndjson" \
   -L green:"$L/green.ndjson" \
   -L lanes:"$L/lanes.ndjson" \
