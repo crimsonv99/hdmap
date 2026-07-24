@@ -188,6 +188,14 @@
     const styleLayers = [
       { id: "bg", type: "background", paint: { "background-color": "#e7ecdb" } },
       { id: "satellite", type: "raster", source: "sat", layout: { visibility: "none" } },
+      // flat 2D street map for the zoomed-out view. Fades out as you cross the
+      // switch zoom, where the 3D HD layers take over.
+      {
+        id: "basemap-2d", type: "raster", source: "basemap", maxzoom: 16,
+        paint: {
+          "raster-opacity": ["interpolate", ["linear"], ["zoom"], 15, 1, 15.5, 0],
+        },
+      },
       // intersection casing then fill (fuse road + junction into one surface)
       {
         id: "inter-edge", type: "line", source: "intersections",
@@ -242,14 +250,22 @@
 
     // remap each HD layer from its GeoJSON source id to the single vector source
     // + matching source-layer inside the tiles (keeps the paint block untouched)
+    // The HD osm2streets layers only make sense zoomed in, so they render ONLY
+    // above the 2D->3D switch zoom (SWITCH_Z). Below it, the flat street basemap
+    // shows instead. (Layers with a higher minzoom, e.g. markings at 16, keep it.)
+    const SWITCH_Z = 15;
     for (const L of styleLayers) {
-      if (L.source && SRC_LAYER[L.source]) { L["source-layer"] = SRC_LAYER[L.source]; L.source = "hd"; }
+      if (L.source && SRC_LAYER[L.source]) {
+        L["source-layer"] = SRC_LAYER[L.source];
+        L.source = "hd";
+        L.minzoom = Math.max(SWITCH_Z, L.minzoom || 0);
+      }
     }
 
     const map = new maplibregl.Map({
       container: "map",
       center: [105.8520, 21.0310], // Hoan Kiem lake — dense central Hanoi
-      zoom: 15,
+      zoom: 16,       // open in 3D HD mode (above the 2D->3D switch)
       minZoom: 12,
       maxZoom: 19,   // z17 tiles overzoom cleanly to 19; past that markings blur
       maxBounds: CITY_BOUNDS,
@@ -264,6 +280,16 @@
             type: "raster", tileSize: 256,
             tiles: ["https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
             attribution: "Imagery © Esri, Maxar, Earthstar Geographics",
+          },
+          // flat street map (CARTO Voyager) for the 2D zoomed-out view
+          basemap: {
+            type: "raster", tileSize: 256, maxzoom: 20,
+            tiles: [
+              "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+              "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+              "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+            ],
+            attribution: "© OpenStreetMap contributors © CARTO",
           },
           hd: {
             type: "vector",
@@ -393,14 +419,23 @@
     document.getElementById("goto-btn").onclick = goTo;
     document.getElementById("goto").addEventListener("keydown", (e) => e.key === "Enter" && goTo());
 
+    // ---- auto 2D<->3D by zoom (like F4Map / Google) --------------------------
+    // Below the switch zoom the map is flat 2D (street basemap); above it the
+    // camera tilts into the 3D HD view. Only fires when crossing the threshold,
+    // so it never fights an in-progress zoom. The 3D button is a manual override.
     const btn3d = document.getElementById("btn-3d");
-    btn3d.onclick = () => {
-      const on = !btn3d.classList.contains("on");
-      btn3d.classList.toggle("on", on);
-      map.easeTo({ pitch: on ? 55 : 0, duration: 600 });
+    let is3d = map.getPitch() > 5;
+    btn3d.classList.toggle("on", is3d);
+    const setMode = (want3d, ms) => {
+      if (want3d === is3d) return;
+      is3d = want3d;
+      btn3d.classList.toggle("on", is3d);
+      map.easeTo({ pitch: is3d ? 55 : 0, duration: ms });
     };
+    map.on("zoom", () => setMode(map.getZoom() > SWITCH_Z, 400));
+    btn3d.onclick = () => setMode(!is3d, 500);
     document.getElementById("btn-frame").onclick = () => {
-      map.fitBounds(dataBounds, { padding: 40, pitch: 30, maxZoom: 16 });
+      map.fitBounds(dataBounds, { padding: 40, pitch: 0, maxZoom: 16 });
     };
     document.getElementById("btn-north").onclick = () => map.easeTo({ bearing: 0, duration: 500 });
 
