@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, extname, normalize } from "node:path";
 import { fork } from "node:child_process";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
-import { initEngine, buildingsFromOsm, roadsFromOsm, landcoverFromOsm } from "./build.mjs";
+import { initEngine, buildingsFromOsm, roadsFromOsm, landcoverFromOsm, linesFromOsm } from "./build.mjs";
 import { rebuildFiles } from "./rebuild.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -228,6 +228,29 @@ function polyString(coords) {
   return parts.join(" ");
 }
 
+// Shared Overpass fragment for context AREAS (buildings + water + green land
+// cover). `area` is an Overpass area filter appended to each selector — "" for a
+// [bbox:…] query, or `(poly:"…")` for a boundary ring. Used by /api/buildings and
+// /api/alldata so the tag list stays in one place.
+const ctxArea = (area) =>
+  `way["building"]${area};relation["building"]${area};` +
+  `way["natural"="water"]${area};relation["natural"="water"]${area};` +
+  `way["water"]${area};way["waterway"="riverbank"]${area};` +
+  `way["landuse"~"reservoir|basin|grass|forest|meadow|village_green|cemetery|recreation_ground|orchard|farmland"]${area};` +
+  `relation["landuse"~"reservoir|basin|grass|forest|meadow|cemetery|recreation_ground|orchard|farmland"]${area};` +
+  `way["leisure"~"park|garden|recreation_ground|pitch|golf_course|nature_reserve"]${area};` +
+  `relation["leisure"~"park|garden|recreation_ground|golf_course|nature_reserve"]${area};` +
+  `way["natural"~"wood|scrub|grassland|heath"]${area};relation["natural"~"wood|scrub|grassland|heath"]${area};`;
+
+// Rough bbox area in km² (mid-latitude scaled). Used as the "All data" backstop
+// guard so a low-zoom viewport can't launch a giant Overpass query.
+function bboxKm2([w, s, e, n]) {
+  const midLat = ((s + n) / 2) * Math.PI / 180;
+  const latKm = Math.abs(n - s) * 111.32;
+  const lngKm = Math.abs(e - w) * 111.32 * Math.cos(midLat);
+  return latKm * lngKm;
+}
+
 function sendJSON(res, code, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -430,20 +453,11 @@ const server = createServer((req, res) => {
         // untagged) render as nothing. `(._;>;)` pulls each relation's member ways
         // and their nodes so the rings can be assembled.
         // context layers: buildings + water + green land cover, in one fetch.
-        const CTX = (area) =>
-          `way["building"]${area};relation["building"]${area};` +
-          `way["natural"="water"]${area};relation["natural"="water"]${area};` +
-          `way["water"]${area};way["waterway"="riverbank"]${area};` +
-          `way["landuse"~"reservoir|basin|grass|forest|meadow|village_green|cemetery|recreation_ground|orchard|farmland"]${area};` +
-          `relation["landuse"~"reservoir|basin|grass|forest|meadow|cemetery|recreation_ground|orchard|farmland"]${area};` +
-          `way["leisure"~"park|garden|recreation_ground|pitch|golf_course|nature_reserve"]${area};` +
-          `relation["leisure"~"park|garden|recreation_ground|golf_course|nature_reserve"]${area};` +
-          `way["natural"~"wood|scrub|grassland|heath"]${area};relation["natural"~"wood|scrub|grassland|heath"]${area};`;
         const query = ringStrs
-          ? `[timeout:180];(${ringStrs.map((s) => CTX(`(poly:"${s}")`)).join("")});(._;>;);out;`
+          ? `[timeout:180];(${ringStrs.map((s) => ctxArea(`(poly:"${s}")`)).join("")});(._;>;);out;`
           : (() => {
               const [w, s, e, n] = bbox;
-              return `[timeout:90][bbox:${s},${w},${n},${e}];(${CTX("")});(._;>;);out;`;
+              return `[timeout:90][bbox:${s},${w},${n},${e}];(${ctxArea("")});(._;>;);out;`;
             })();
         const osmXml = await overpassFetch(query, ringStrs ? 190000 : 90000);
         const fc = buildingsFromOsm(osmXml);
@@ -453,6 +467,64 @@ const server = createServer((req, res) => {
         writeFileSync(join(dataDir, "green.geojson"), JSON.stringify(green));
         log("buildings-fetch-done", { buildings: fc.features.length, water: water.features.length, green: green.features.length });
         return sendJSON(res, 200, { ok: true, count: fc.features.length, water: water.features.length, green: green.features.length });
+      } catch (e) { return sendJSON(res, 500, { error: e.message }); }
+    });
+    return;
+  }
+
+  // --- API: "All data" — quick current-view overview (lines + areas) ---------
+  // The fast, everything-visible mode: pulls highways/railways/waterways (lines)
+  // AND buildings + water + green (areas) for the viewport in ONE Overpass query,
+  // renders them RAW (no osm2streets — that's what makes it quick), and does NOT
+  // touch current.osm or the JOSM changeset pipeline. Writes raw_roads/water/
+  // green/buildings, blanks the HD layers (so stale lanes from a prior small fetch
+  // don't linger), and stamps mode:"alldata". Backstopped by an area cap so a
+  // low-zoom viewport can't launch a giant query (the client also guards on zoom).
+  if (req.method === "POST" && url.pathname === "/api/alldata") {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", async () => {
+      try {
+        const { bbox } = JSON.parse(body || "{}");
+        if (!Array.isArray(bbox) || bbox.length !== 4)
+          return sendJSON(res, 400, { error: "need { bbox: [w, s, e, n] }" });
+        const MAX_KM2 = Number(process.env.HDMAP_ALLDATA_MAX_KM2 || 25);
+        const km2 = bboxKm2(bbox);
+        if (km2 > MAX_KM2) {
+          log("alldata-too-big", { bbox, km2: Math.round(km2), max: MAX_KM2 });
+          return sendJSON(res, 413, { error: `view too large (${Math.round(km2)} km²) — zoom in`, tooBig: true, km2: Math.round(km2), max: MAX_KM2 });
+        }
+        log("alldata", { bbox, km2: Math.round(km2) });
+        const [w, s, e, n] = bbox;
+        // one query: linear features + context areas. (._;>;) pulls child nodes and
+        // relation members so both lines and multipolygon areas can be assembled.
+        const lineSel = `way["highway"];way["railway"];way["waterway"];`;
+        const query = `[timeout:90][bbox:${s},${w},${n},${e}];(${lineSel}${ctxArea("")});(._;>;);out;`;
+        const osmXml = await overpassFetch(query, 90000);
+        const lines = linesFromOsm(osmXml);
+        const bld = buildingsFromOsm(osmXml);
+        const { water, green } = landcoverFromOsm(osmXml);
+        writeFileSync(join(dataDir, "raw_roads.geojson"), JSON.stringify(lines));
+        writeFileSync(join(dataDir, "buildings.geojson"), JSON.stringify(bld));
+        writeFileSync(join(dataDir, "water.geojson"), JSON.stringify(water));
+        writeFileSync(join(dataDir, "green.geojson"), JSON.stringify(green));
+        // blank the HD layers — this mode has no osm2streets lanes/markings/etc.
+        const EMPTY = JSON.stringify({ type: "FeatureCollection", features: [] });
+        for (const f of ["lanes", "markings", "intersections", "turn_arrows"])
+          writeFileSync(join(dataDir, `${f}.geojson`), EMPTY);
+        const center = [(w + e) / 2, (s + n) / 2];
+        let meta = {};
+        try { meta = JSON.parse(readFileSync(join(dataDir, "meta.json"), "utf8")); } catch {}
+        writeFileSync(join(dataDir, "meta.json"),
+          JSON.stringify({ ...meta, center, mode: "alldata", lines: lines.features.length, buildings: bld.features.length }));
+        const v = Date.now();
+        writeFileSync(join(dataDir, "version.json"),
+          JSON.stringify({ v, source: "alldata", fetchedAt: v, mode: "alldata", lines: lines.features.length }));
+        log("alldata-done", { lines: lines.features.length, buildings: bld.features.length, water: water.features.length, green: green.features.length });
+        return sendJSON(res, 200, {
+          ok: true, version: v, mode: "alldata",
+          counts: { lines: lines.features.length, buildings: bld.features.length, water: water.features.length, green: green.features.length },
+        });
       } catch (e) { return sendJSON(res, 500, { error: e.message }); }
     });
     return;

@@ -772,6 +772,7 @@
     <div class="tabs">
       <button class="tab active" data-tab="road" type="button">Road</button>
       <button class="tab" data-tab="building" type="button">Building</button>
+      <button class="tab" data-tab="alldata" type="button">All data</button>
       <button class="tab" data-tab="batch" type="button">Batch</button>
     </div>
 
@@ -813,6 +814,28 @@
         magenta), then <b>Submit buildings</b> sends them all to one JOSM layer.</div>
       <button id="btn-submit-bldg">Submit buildings (0)</button>
       <div id="staged-bldg-list"></div>
+    </div>
+
+    <!-- ───────── ALL DATA TAB ───────── -->
+    <!-- Quick current-view overview: raw lines + areas straight from OSM, no
+         osm2streets. For a fast look at everything in the viewport. -->
+    <div class="tabpane" data-pane="alldata" hidden>
+      <label><input type="checkbox" id="ad-roads" checked /><span class="sw" style="background:#9aa0aa"></span>
+        Roads / rail / waterways</label>
+      <label><input type="checkbox" id="ad-water" checked /><span class="sw" style="background:#9ec6e0"></span>
+        Water</label>
+      <label><input type="checkbox" id="ad-green" checked /><span class="sw" style="background:#c6dcac"></span>
+        Green land cover</label>
+      <label><input type="checkbox" id="ad-bldg" checked /><span class="sw" style="background:#bcb6a6"></span>
+        Buildings (3D)</label>
+      <div class="tools">
+        <button id="btn-fetch-all">⤓ Load all data (this view)</button>
+      </div>
+      <div class="hint">Loads every line and area in the <b>current view</b> directly from
+        OSM — fast, because it skips the HD lane/marking build. Roads render as flat
+        coloured lines (no lanes or 3D road surface); buildings still extrude.
+        <br>Zoom in first: the view must be small enough (it won't load a whole city
+        at once).</div>
     </div>
 
     <!-- ───────── BATCH TAB ───────── -->
@@ -977,6 +1000,11 @@
           modeBanner.textContent =
             `Overview mode — ${(m.roads || 0).toLocaleString()} roads. HD lanes/markings/3D render under ` +
             `${(m.limit || 4000).toLocaleString()} roads; fetch or reset to a smaller area for full detail.`;
+        } else if (m && m.mode === "alldata") {
+          modeBanner.style.display = "block";
+          modeBanner.textContent =
+            `All-data view — raw OSM lines + areas (no HD lanes/markings). ` +
+            `Fetch in the Road tab for the full HD road surface.`;
         } else {
           modeBanner.style.display = "none";
         }
@@ -1156,11 +1184,17 @@
           id: "raw-roads", type: "line", source: "raw-roads",
           layout: { "line-join": "round", "line-cap": "round" },
           paint: {
-            "line-color": ["match", ["get", "highway"],
-              "motorway", "#e06a4b", "trunk", "#e06a4b",
-              "primary", "#e8a33d", "secondary", "#e8c84a",
-              "tertiary", "#8a90a0", "residential", "#9aa0aa", "service", "#b6bcc6",
-              "#9aa0aa"],
+            // In All-data mode this source also carries railways + waterways
+            // (kind=rail / kind=waterway), so branch on kind first; otherwise fall
+            // through to the highway-class palette.
+            "line-color": ["case",
+              ["==", ["get", "kind"], "waterway"], "#6aa9d0",
+              ["==", ["get", "kind"], "rail"], "#9a8f9c",
+              ["match", ["get", "highway"],
+                "motorway", "#e06a4b", "trunk", "#e06a4b",
+                "primary", "#e8a33d", "secondary", "#e8c84a",
+                "tertiary", "#8a90a0", "residential", "#9aa0aa", "service", "#b6bcc6",
+                "#9aa0aa"]],
             "line-width": ["interpolate", ["linear"], ["zoom"],
               11, ["match", ["get", "highway"], "motorway", 2.5, "trunk", 2.5, "primary", 2, "secondary", 1.6, 0.8],
               16, ["match", ["get", "highway"], "motorway", 9, "trunk", 9, "primary", 7, "secondary", 5.5, 3]],
@@ -1505,6 +1539,11 @@
       bind("t-turn", "turn-left", "turn-right", "turn-arrows",
         "turn-left-hi", "turn-right-hi", "turn-arrows-hi");
       bind("t-bldg", "buildings-3d", "buildings-staged");
+      // All-data tab toggles (share the water/green/raw-roads/buildings layers)
+      bind("ad-roads", "raw-roads");
+      bind("ad-water", "water");
+      bind("ad-green", "green");
+      bind("ad-bldg", "buildings-3d", "buildings-staged");
 
       // 3D view: tilt the camera (buildings/bridges rise once pitched). Off =
       // today's top-down. dragRotate/touchPitch stay live for manual control.
@@ -1764,20 +1803,24 @@
       let missed = 0;
 
       const reloadSources = async (v) => {
-        const [ln, mk, it, ta, bd, rw, mt] = await Promise.all([
+        const [ln, mk, it, ta, bd, rw, wt, gr, mt] = await Promise.all([
           fetch(`data/lanes.geojson?v=${v}`).then((r) => r.json()),
           fetch(`data/markings.geojson?v=${v}`).then((r) => r.json()),
           fetch(`data/intersections.geojson?v=${v}`).then((r) => r.json()),
           fetch(`data/turn_arrows.geojson?v=${v}`).then((r) => r.json()).catch(() => null),
           fetch(`data/buildings.geojson?v=${v}`).then((r) => r.json()).catch(() => null),
           fetch(`data/raw_roads.geojson?v=${v}`).then((r) => r.json()).catch(() => null),
+          fetch(`data/water.geojson?v=${v}`).then((r) => r.json()).catch(() => null),
+          fetch(`data/green.geojson?v=${v}`).then((r) => r.json()).catch(() => null),
           fetch(`data/meta.json?v=${v}`).then((r) => r.json()).catch(() => null),
         ]);
         map.getSource("lanes").setData(ln);
         map.getSource("markings").setData(mk);
         map.getSource("intersections").setData(it);
         if (ta) map.getSource("turn-arrows").setData(ta);
-        if (rw) map.getSource("raw-roads")?.setData(rw); // LOD overview layer
+        if (rw) map.getSource("raw-roads")?.setData(rw); // LOD overview / all-data lines
+        if (wt) map.getSource("water")?.setData(wt);
+        if (gr) map.getSource("green")?.setData(gr);
         applyMode(mt); // flip the HD/overview banner if the area size crossed the gateway
         // source gets the shrunk (gapped) copy for display; currentBuildings keeps
         // the true geometry for editing/height lookup.
@@ -2468,6 +2511,42 @@
           if (map.getLayer("buildings-3d")) map.setLayoutProperty("buildings-3d", "visibility", "visible");
           toolStatus.textContent = `buildings loaded — ${resp.count} in view`;
         } catch (err) { toolStatus.textContent = "buildings fetch failed: " + err.message; }
+      };
+
+      // ---- ALL DATA: quick current-view overview (lines + areas, no HD) --------
+      // Grabs the viewport bbox and hits /api/alldata, which pulls highways/rail/
+      // waterways + buildings/water/green in one shot and renders them raw. Guarded
+      // on zoom client-side (instant feedback); the server enforces an area cap too.
+      const ALLDATA_MIN_ZOOM = 13;
+      document.getElementById("btn-fetch-all").onclick = async () => {
+        if (map.getZoom() < ALLDATA_MIN_ZOOM) {
+          toolStatus.textContent =
+            `zoom in to load all data (need zoom ≥ ${ALLDATA_MIN_ZOOM}, now ${map.getZoom().toFixed(1)})`;
+          return;
+        }
+        const b = map.getBounds();
+        const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+        toolStatus.textContent = "loading all data for this view…";
+        try {
+          const resp = await fetch("/api/alldata", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bbox }),
+          }).then((r) => r.json());
+          if (resp.tooBig) {
+            toolStatus.textContent = `view too large (${resp.km2} km², max ${resp.max}) — zoom in and retry`;
+            return;
+          }
+          if (resp.error) { toolStatus.textContent = "all-data load failed: " + resp.error; return; }
+          await reloadSources(resp.version);
+          // make sure the overview line layer + areas are on so the result shows
+          for (const [id, on] of [["ad-roads", true], ["ad-water", true], ["ad-green", true], ["ad-bldg", true]]) {
+            const el = document.getElementById(id); if (el && !el.checked) { el.checked = on; el.dispatchEvent(new Event("change")); }
+          }
+          if (map.getLayer("buildings-3d")) map.setLayoutProperty("buildings-3d", "visibility", "visible");
+          const c = resp.counts || {};
+          toolStatus.textContent =
+            `all data loaded — ${c.lines ?? 0} lines, ${c.buildings ?? 0} buildings, ${(c.water ?? 0) + (c.green ?? 0)} areas`;
+        } catch (err) { toolStatus.textContent = "all-data load failed: " + err.message; }
       };
 
       // ═══════════════ BATCH TAB: boundary fetch + bulk CSV → JOSM ═══════════

@@ -484,6 +484,54 @@ export function roadsFromOsm(osmXml) {
   return { type: "FeatureCollection", features };
 }
 
+// "All data" line layer: like roadsFromOsm but broader — every LINEAR feature we
+// want in the quick current-view overview. Keeps highways, railways and
+// waterways (rivers/streams/canals), each tagged with a `kind` the viewer styles
+// (road palette / rail hatch tone / water blue). Area features (buildings, lakes,
+// landuse) are NOT here — they come from buildingsFromOsm + landcoverFromOsm. A
+// way that is BOTH linear and closed (e.g. a riverbank) is skipped as a line when
+// it's really an area (natural=water / waterway=riverbank) so it doesn't double up
+// with the water fill. Cheap: no osm2streets, just geometry + tags.
+export function linesFromOsm(osmXml) {
+  const doc = new DOMParser().parseFromString(osmXml, "text/xml");
+  const nodes = new Map();
+  const nodeEls = doc.getElementsByTagName("node");
+  for (let i = 0; i < nodeEls.length; i++) {
+    const n = nodeEls[i];
+    const id = n.getAttribute("id");
+    const lon = parseFloat(n.getAttribute("lon")), lat = parseFloat(n.getAttribute("lat"));
+    if (id && Number.isFinite(lon) && Number.isFinite(lat)) nodes.set(id, [lon, lat]);
+  }
+  const features = [];
+  const wayEls = doc.getElementsByTagName("way");
+  for (let i = 0; i < wayEls.length; i++) {
+    const w = wayEls[i];
+    const tags = {};
+    const tagEls = w.getElementsByTagName("tag");
+    for (let j = 0; j < tagEls.length; j++)
+      tags[tagEls[j].getAttribute("k")] = tagEls[j].getAttribute("v");
+    // classify: which linear kind is this? (first match wins)
+    let kind = null;
+    if (tags.highway) kind = "road";
+    else if (tags.railway) kind = "rail";
+    else if (tags.waterway && tags.waterway !== "riverbank") kind = "waterway";
+    if (!kind) continue; // not a line we render here (areas handled elsewhere)
+    const ndEls = w.getElementsByTagName("nd");
+    const line = [];
+    for (let j = 0; j < ndEls.length; j++) {
+      const p = nodes.get(ndEls[j].getAttribute("ref"));
+      if (p) line.push(p);
+    }
+    if (line.length < 2) continue;
+    features.push({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: line },
+      properties: { osm_way_id: w.getAttribute("id"), kind, ...tags },
+    });
+  }
+  return { type: "FeatureCollection", features };
+}
+
 /**
  * Turn OSM XML into the HD layers plus a suggested map centre.
  * Returns { lanes, markings, intersections, turnArrows, buildings, center, counts }.
