@@ -50,10 +50,10 @@
 
     /* --- live camera readout (F4Map-style) --- */
     #readout {
-      position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5;
+      position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 5;
       background: rgba(20,23,29,.82); color: #e7ecf3; border-radius: 8px;
-      padding: 7px 11px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-      box-shadow: 0 1px 6px rgba(0,0,0,.25); white-space: nowrap;
+      padding: 6px 11px; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+      box-shadow: 0 1px 6px rgba(0,0,0,.25); white-space: nowrap; pointer-events: none;
     }
     #readout b { color: #9ec5f0; font-weight: 600; }
     @media (max-width: 640px) { #readout { display: none; } }
@@ -130,10 +130,16 @@
       "sidewalk corner", "#8a90a0", "#ffffff",
     ];
 
+    // Railways (osm2streets type "LightRail") aren't routable and just confuse a
+    // road map, so drop them from the surface + casing. Combine with each band's
+    // layer filter.
+    const notRail = ["!=", ["get", "type"], "LightRail"];
+    const road = (flt) => ["all", flt, notRail];
+
     // roads are split into casings (drawn first) then fills (drawn after) so the
     // fills swallow every internal seam, leaving only the outer perimeter dark.
     const bandEdges = (sfx, flt) => [{
-      id: "lanes-edge" + sfx, type: "line", source: "lanes", filter: flt,
+      id: "lanes-edge" + sfx, type: "line", source: "lanes", filter: road(flt),
       layout: { "line-sort-key": sortKey, "line-join": "round", "line-cap": "round" },
       paint: {
         "line-color": "#1a1e25",
@@ -142,7 +148,7 @@
     }];
     const bandFills = (sfx, flt) => [
       {
-        id: "lanes" + sfx, type: "fill", source: "lanes", filter: flt,
+        id: "lanes" + sfx, type: "fill", source: "lanes", filter: road(flt),
         layout: { "fill-sort-key": sortKey },
         paint: { "fill-color": laneColor, "fill-opacity": 1 },
       },
@@ -245,7 +251,7 @@
       center: [105.8520, 21.0310], // Hoan Kiem lake — dense central Hanoi
       zoom: 15,
       minZoom: 12,
-      maxZoom: 20,
+      maxZoom: 19,   // z17 tiles overzoom cleanly to 19; past that markings blur
       maxBounds: CITY_BOUNDS,
       pitch: 55,      // 3D by default — this is the whole point of the MVP
       bearing: -18,
