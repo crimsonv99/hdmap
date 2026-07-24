@@ -294,9 +294,8 @@
         layout: { visibility: "none", "line-join": "round" },
         paint: {
           "line-color": "#5ffbf1",
-          "line-width": ["interpolate", ["linear"], ["zoom"], 15, 0.6, 19, 2],
-          "line-opacity": 0.85,
-          "line-blur": 0.6,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 15, 0.4, 19, 1.2],
+          "line-opacity": 0.4,
         },
       },
     ];
@@ -556,19 +555,18 @@
       set("intersections", "fill-color", dark ? "#333d4d" : "#5b6270");
       for (const id of ["lanes-edge", "lanes-edge-hi", "inter-edge"])
         set(id, "line-color", dark ? "#2aa7b8" : "#1a1e25");
-      // buildings: flat neon cyan (gradient off = emissive look) vs lit earth tones
+      // buildings: SOLID like day (opaque, day-style vertical shading so walls
+      // read as real volumes, not glass boxes) — only the colour changes to cyan.
       set("buildings-3d", "fill-extrusion-color", dark ? bldgNeonColor : bldgDayColor);
-      set("buildings-3d", "fill-extrusion-vertical-gradient", !dark);
-      set("buildings-3d", "fill-extrusion-opacity", dark ? 0.96 : 0.92);
-      vis("buildings-edge", dark);
+      set("buildings-3d", "fill-extrusion-vertical-gradient", true);
+      set("buildings-3d", "fill-extrusion-opacity", dark ? 1 : 0.92);
+      vis("buildings-edge", dark); // keep a faint neon rim, dialled down (see layer paint)
       // 2D basemap swap (below the switch zoom)
       vis("basemap-2d", !dark);
       vis("basemap-2d-dark", dark);
-      // sky + light: flatten the sun in dark so cyan walls read uniform, not lit
+      // sky only — keep the day sun so cyan walls stay lit/solid (flattening the
+      // light was what darkened the walls and made them look see-through)
       map.setSky(dark ? NIGHT_SKY : DAY_SKY);
-      map.setLight(dark
-        ? { anchor: "map", color: "#bfefff", intensity: 0.85, position: [1.2, 210, 30] }
-        : { anchor: "map", color: "#ffffff", intensity: 0.4, position: [1.2, 210, 30] });
       updateStars();
     };
 
