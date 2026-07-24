@@ -161,6 +161,41 @@ const inPolygon = (pt, geom) => {
   return polys.some((rings) => inRing(pt, rings[0]));
 };
 
+// ---- intersection corner rounding (Chaikin) --------------------------------
+// osm2streets builds junction polygons by straight-line trimming, so their
+// corners are sharp. Real kerbs are rounded, which is a big part of why hand-
+// mapped street maps (e.g. the Neukölln Straßenraumkarte) read as "smooth". We
+// can't hand-map every kerb, but we CAN round the generated polygon: Chaikin's
+// corner-cutting replaces each sharp vertex with two points at 1/4 and 3/4 along
+// its edges, so a few passes turn the polygon's corners into smooth curves.
+// SMOOTH_ITERS=0 disables it (env HDMAP_SMOOTH). 2 passes is a gentle round.
+const SMOOTH_ITERS = Number(process.env.HDMAP_SMOOTH ?? 2);
+const chaikinRing = (ring, iters) => {
+  let pts = ring;
+  for (let it = 0; it < iters; it++) {
+    const out = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x0, y0] = pts[i], [x1, y1] = pts[i + 1];
+      out.push([x0 * 0.75 + x1 * 0.25, y0 * 0.75 + y1 * 0.25]);
+      out.push([x0 * 0.25 + x1 * 0.75, y0 * 0.25 + y1 * 0.75]);
+    }
+    out.push(out[0].slice()); // reclose the ring
+    pts = out;
+  }
+  return pts;
+};
+// round every ring of a Polygon / MultiPolygon; skip tiny rings (< 5 pts) where
+// rounding would just wobble a near-triangle.
+const smoothGeom = (geom, iters = SMOOTH_ITERS) => {
+  if (!iters || !geom) return geom;
+  const doRing = (r) => (r.length >= 5 ? chaikinRing(r, iters) : r);
+  if (geom.type === "Polygon")
+    return { ...geom, coordinates: geom.coordinates.map(doRing) };
+  if (geom.type === "MultiPolygon")
+    return { ...geom, coordinates: geom.coordinates.map((p) => p.map(doRing)) };
+  return geom;
+};
+
 const boundsOf = (features) => {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const walk = (c) => {
@@ -497,9 +532,14 @@ export function osmToLayers(osmXml) {
   const net = new JsStreetNetwork(netXml, "", IMPORT_OPTIONS);
 
   const plain = JSON.parse(net.toGeojsonPlain());
+  // Round the sharp junction polygons for a smoother, more real kerb (see
+  // smoothGeom). Rendering fuses roads + intersections into one surface, so the
+  // rounding mostly softens the kerb corners between the incoming roads.
   const intersections = {
     type: "FeatureCollection",
-    features: plain.features.filter((f) => f.properties?.type === "intersection"),
+    features: plain.features
+      .filter((f) => f.properties?.type === "intersection")
+      .map((f) => ({ ...f, geometry: smoothGeom(f.geometry) })),
   };
 
   const lanes = JSON.parse(net.toLanePolygonsGeojson());
