@@ -354,6 +354,97 @@ export function buildingsFromOsm(osmXml) {
   return { type: "FeatureCollection", features };
 }
 
+// ---- water + green land cover (context fills under the roads) ---------------
+// Parsed the same way as buildings — closed ways + multipolygon relations with
+// holes — but grouped into two flat layers. This keeps the map from looking like
+// bare asphalt: lakes/rivers render blue, parks/forest/grass render green. Same
+// inference honesty as elsewhere: geometry straight from OSM, no attributes kept.
+const isWaterTags = (t) =>
+  t.natural === "water" || t.water != null ||
+  t.waterway === "riverbank" || t.landuse === "reservoir" || t.landuse === "basin";
+const isGreenTags = (t) =>
+  ["park", "garden", "recreation_ground", "pitch", "golf_course", "nature_reserve"].includes(t.leisure) ||
+  ["grass", "forest", "meadow", "village_green", "cemetery", "recreation_ground", "orchard", "farmland"].includes(t.landuse) ||
+  ["wood", "scrub", "grassland", "heath"].includes(t.natural);
+
+export function landcoverFromOsm(osmXml) {
+  const doc = new DOMParser().parseFromString(osmXml, "text/xml");
+  const nodes = new Map();
+  const nodeEls = doc.getElementsByTagName("node");
+  for (let i = 0; i < nodeEls.length; i++) {
+    const n = nodeEls[i];
+    const id = n.getAttribute("id");
+    const lon = parseFloat(n.getAttribute("lon")), lat = parseFloat(n.getAttribute("lat"));
+    if (id && Number.isFinite(lon) && Number.isFinite(lat)) nodes.set(id, [lon, lat]);
+  }
+  const ways = new Map();
+  const wayEls = doc.getElementsByTagName("way");
+  for (let i = 0; i < wayEls.length; i++) {
+    const w = wayEls[i];
+    const refs = [];
+    const ndEls = w.getElementsByTagName("nd");
+    for (let j = 0; j < ndEls.length; j++) refs.push(ndEls[j].getAttribute("ref"));
+    ways.set(w.getAttribute("id"), { refs, tags: readTags(w) });
+  }
+
+  const out = { water: [], green: [] };
+  const cat = (t) => (isWaterTags(t) ? "water" : isGreenTags(t) ? "green" : null);
+  const consumed = new Set();
+
+  // multipolygon relations (courtyards / islands become holes)
+  const relEls = doc.getElementsByTagName("relation");
+  for (let i = 0; i < relEls.length; i++) {
+    const r = relEls[i];
+    const tags = readTags(r);
+    if (tags.type !== "multipolygon") continue;
+    const k = cat(tags);
+    if (!k) continue;
+    const outerIds = [], innerIds = [];
+    const memEls = r.getElementsByTagName("member");
+    for (let j = 0; j < memEls.length; j++) {
+      const m = memEls[j];
+      if (m.getAttribute("type") !== "way") continue;
+      const ref = m.getAttribute("ref");
+      (m.getAttribute("role") === "inner" ? innerIds : outerIds).push(ref);
+      consumed.add(ref);
+    }
+    const outers = assembleRings(outerIds, ways, nodes);
+    if (!outers.length) continue;
+    const inners = assembleRings(innerIds, ways, nodes);
+    const polys = outers.map((o) => [o]);
+    for (const hole of inners) {
+      const idx = polys.findIndex((p) => pointInRing(hole[0], p[0]));
+      if (idx >= 0) polys[idx].push(hole);
+    }
+    out[k].push({
+      type: "Feature",
+      geometry: polys.length === 1
+        ? { type: "Polygon", coordinates: polys[0] }
+        : { type: "MultiPolygon", coordinates: polys },
+      properties: {},
+    });
+  }
+
+  // plain closed ways
+  for (const [id, w] of ways) {
+    if (consumed.has(id)) continue;
+    const k = cat(w.tags);
+    if (!k) continue;
+    const ring = [];
+    for (const ref of w.refs) { const p = nodes.get(ref); if (p) ring.push(p); }
+    if (ring.length < 3) continue;
+    const first = ring[0], last = ring[ring.length - 1];
+    if (first[0] !== last[0] || first[1] !== last[1]) ring.push([first[0], first[1]]);
+    if (ring.length < 4) continue;
+    out[k].push({ type: "Feature", geometry: { type: "Polygon", coordinates: [ring] }, properties: {} });
+  }
+
+  return {
+    water: { type: "FeatureCollection", features: out.water },
+    green: { type: "FeatureCollection", features: out.green },
+  };
+}
+
 // Raw road network straight from OSM XML: one LineString per highway way, with
 // its OSM id + all tags carried over verbatim. This is the RAW fetched geometry
 // (not the osm2streets-exploded lanes/markings) — used for the "download roads

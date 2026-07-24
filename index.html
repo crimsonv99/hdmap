@@ -959,6 +959,11 @@
         .then((r) => r.json()).catch(() => ({ type: "FeatureCollection", features: [] }));
       const buildingsGeojson = await fetch("data/buildings.geojson")
         .then((r) => r.json()).catch(() => ({ type: "FeatureCollection", features: [] }));
+      // water + green land cover (context fills under the roads). Optional — fall
+      // back to empty so an area fetched before this feature still loads.
+      const emptyFC = { type: "FeatureCollection", features: [] };
+      const waterGeojson = await fetch("data/water.geojson").then((r) => r.json()).catch(() => emptyFC);
+      const greenGeojson = await fetch("data/green.geojson").then((r) => r.json()).catch(() => emptyFC);
       let currentLanes = lanesGeojson; // latest lane features (updated on live reload)
       let currentIntersections = intersectionsGeojson; // kept for node (intersection) editing
       let currentBuildings = buildingsGeojson; // kept for building (height) editing
@@ -1115,6 +1120,16 @@
         {
           id: "satellite", type: "raster", source: "sat",
           layout: { visibility: "none" }, paint: { "raster-opacity": 1 }
+        },
+        // land cover under the roads — green parks/forest and blue water — so the
+        // scene isn't bare asphalt. Drawn first (below every road/building layer).
+        {
+          id: "green", type: "fill", source: "green",
+          paint: { "fill-color": "#c6dcac", "fill-opacity": 0.9 },
+        },
+        {
+          id: "water", type: "fill", source: "water",
+          paint: { "fill-color": "#9ec6e0", "fill-opacity": 1 },
         },
         // Intersections: real junctions only. osm2streets also emits non-junction
         // nodes we hide — "Connection" (a road split for a tag change) and
@@ -1280,6 +1295,8 @@
             lanes: { type: "geojson", data: lanesGeojson },
             intersections: { type: "geojson", data: intersectionsGeojson },
             markings: { type: "geojson", data: "data/markings.geojson" },
+            water: { type: "geojson", data: waterGeojson },
+            green: { type: "geojson", data: greenGeojson },
             // highlight sources — fed via setData on hover/select (setFilter is
             // gated on isStyleLoaded, which never settles in some embeds)
             "hl-hover": { type: "geojson", data: { type: "FeatureCollection", features: [] } },

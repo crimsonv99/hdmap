@@ -9,7 +9,7 @@
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { initEngine, osmToLayers } from "./build.mjs";
+import { initEngine, osmToLayers, landcoverFromOsm } from "./build.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dir, "data");
@@ -23,9 +23,16 @@ const bbox =
 
 try {
   console.log(`[1/3] Fetching OSM data from Overpass for bbox=${bbox} ...`);
-  // buildings come along for 3D context extrusions (osm2streets ignores them; we
-  // polygonize them ourselves in build.mjs). `>` recurses to every way's nodes.
-  const query = `[bbox:${bbox}];(way["highway"];way["building"];>;);out meta;`;
+  // buildings + water + green land cover come along for context (osm2streets
+  // ignores them; we polygonize them ourselves in build.mjs). `>` recurses to
+  // every way's nodes.
+  const query = `[bbox:${bbox}];(` +
+    `way["highway"];way["building"];relation["building"];` +
+    `way["natural"~"water|wood|scrub|grassland|heath"];relation["natural"~"water|wood|scrub|grassland|heath"];` +
+    `way["water"];way["waterway"="riverbank"];` +
+    `way["landuse"~"reservoir|basin|grass|forest|meadow|village_green|cemetery|recreation_ground|orchard|farmland"];relation["landuse"~"reservoir|basin|grass|forest|meadow|cemetery|recreation_ground|orchard|farmland"];` +
+    `way["leisure"~"park|garden|recreation_ground|pitch|golf_course|nature_reserve"];relation["leisure"~"park|garden|recreation_ground|golf_course|nature_reserve"];` +
+    `>;);out meta;`;
   let res;
   try {
     res = await fetch("https://overpass-api.de/api/interpreter", {
@@ -62,6 +69,9 @@ try {
   writeFileSync(join(dataDir, "intersections.geojson"), JSON.stringify(intersections));
   writeFileSync(join(dataDir, "turn_arrows.geojson"), JSON.stringify(turnArrows));
   writeFileSync(join(dataDir, "buildings.geojson"), JSON.stringify(buildings));
+  const { water, green } = landcoverFromOsm(osmXml);
+  writeFileSync(join(dataDir, "water.geojson"), JSON.stringify(water));
+  writeFileSync(join(dataDir, "green.geojson"), JSON.stringify(green));
   for (const [k, v] of Object.entries(counts))
     console.log(`      ${k.padEnd(14)} ${v} features`);
 

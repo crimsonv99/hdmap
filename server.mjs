@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, extname, normalize } from "node:path";
 import { fork } from "node:child_process";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
-import { initEngine, buildingsFromOsm, roadsFromOsm } from "./build.mjs";
+import { initEngine, buildingsFromOsm, roadsFromOsm, landcoverFromOsm } from "./build.mjs";
 import { rebuildFiles } from "./rebuild.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -429,19 +429,30 @@ const server = createServer((req, res) => {
         // (schools/factories mapped as multipolygon relations, whose member ways are
         // untagged) render as nothing. `(._;>;)` pulls each relation's member ways
         // and their nodes so the rings can be assembled.
+        // context layers: buildings + water + green land cover, in one fetch.
+        const CTX = (area) =>
+          `way["building"]${area};relation["building"]${area};` +
+          `way["natural"="water"]${area};relation["natural"="water"]${area};` +
+          `way["water"]${area};way["waterway"="riverbank"]${area};` +
+          `way["landuse"~"reservoir|basin|grass|forest|meadow|village_green|cemetery|recreation_ground|orchard|farmland"]${area};` +
+          `relation["landuse"~"reservoir|basin|grass|forest|meadow|cemetery|recreation_ground|orchard|farmland"]${area};` +
+          `way["leisure"~"park|garden|recreation_ground|pitch|golf_course|nature_reserve"]${area};` +
+          `relation["leisure"~"park|garden|recreation_ground|golf_course|nature_reserve"]${area};` +
+          `way["natural"~"wood|scrub|grassland|heath"]${area};relation["natural"~"wood|scrub|grassland|heath"]${area};`;
         const query = ringStrs
-          ? `[timeout:180];(${ringStrs.map((s) =>
-              `way["building"](poly:"${s}");relation["building"](poly:"${s}");`).join("")});(._;>;);out;`
+          ? `[timeout:180];(${ringStrs.map((s) => CTX(`(poly:"${s}")`)).join("")});(._;>;);out;`
           : (() => {
               const [w, s, e, n] = bbox;
-              return `[timeout:60][bbox:${s},${w},${n},${e}];` +
-                `(way["building"];relation["building"];);(._;>;);out;`;
+              return `[timeout:90][bbox:${s},${w},${n},${e}];(${CTX("")});(._;>;);out;`;
             })();
-        const osmXml = await overpassFetch(query, ringStrs ? 190000 : 70000);
+        const osmXml = await overpassFetch(query, ringStrs ? 190000 : 90000);
         const fc = buildingsFromOsm(osmXml);
         writeFileSync(join(dataDir, "buildings.geojson"), JSON.stringify(fc));
-        log("buildings-fetch-done", { count: fc.features.length });
-        return sendJSON(res, 200, { ok: true, count: fc.features.length });
+        const { water, green } = landcoverFromOsm(osmXml);
+        writeFileSync(join(dataDir, "water.geojson"), JSON.stringify(water));
+        writeFileSync(join(dataDir, "green.geojson"), JSON.stringify(green));
+        log("buildings-fetch-done", { buildings: fc.features.length, water: water.features.length, green: green.features.length });
+        return sendJSON(res, 200, { ok: true, count: fc.features.length, water: water.features.length, green: green.features.length });
       } catch (e) { return sendJSON(res, 500, { error: e.message }); }
     });
     return;
