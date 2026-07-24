@@ -59,10 +59,28 @@
     @media (max-width: 640px) { #readout { display: none; } }
 
     .maplibregl-ctrl-attrib { font-size: 10px; }
+
+    /* --- dark-mode starfield: a static backdrop over the upper (sky) part of
+       the screen. MapLibre paints the sky opaquely into the GL canvas, so stars
+       can't sit *behind* it — this overlay sits on top (pointer-events:none) and
+       is masked to fade out toward the horizon so it blends into the sky glow.
+       Only shown when dark mode is on AND the camera is tilted (3D). --- */
+    #stars {
+      position: absolute; top: 0; left: 0; right: 0; height: 55%; z-index: 1;
+      pointer-events: none; opacity: 0; transition: opacity .6s ease;
+      -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+      mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+    }
+    #stars.on { opacity: 1; }
+    #stars i {
+      position: absolute; display: block; background: #eaf6ff; border-radius: 50%;
+      box-shadow: 0 0 4px 1px rgba(180,230,255,.7);
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <div id="stars"></div>
 
   <div id="readout">zoom <b id="r-zoom">–</b> · tilt <b id="r-tilt">–</b>° · dir <b id="r-dir">–</b>°</div>
 
@@ -74,6 +92,7 @@
 
   <div id="controls">
     <button id="btn-3d" class="on">3D&nbsp;view</button>
+    <button id="btn-dark" title="Neon night mode">🌙 Dark</button>
     <button id="btn-frame">Frame&nbsp;city</button>
     <button id="btn-north" title="Reset bearing to north">⌖ North</button>
   </div>
@@ -130,6 +149,15 @@
       "lane arrow", "#d7dbe3", "lane separator", "#c9cdd6",
       "sidewalk corner", "#8a90a0", "#ffffff",
     ];
+    // daytime building tint — per-block earth tones by a hash of the way id, so
+    // neighbours read as distinct. Dark mode swaps this whole expression for flat
+    // neon cyan. Kept as a const so both modes reference the same source of truth.
+    const bldgDayColor = [
+      "match", ["%", ["to-number", ["get", "osm_way_id"], 0], 6],
+      0, "#c7c0ac", 1, "#b3ac98", 2, "#c1b9a4",
+      3, "#a9a28e", 4, "#cac3b0", 5, "#b8b19d", "#bcb6a6",
+    ];
+    const bldgNeonColor = "#00e5ff";
 
     // Railways (osm2streets type "LightRail") aren't routable and just confuse a
     // road map, so drop them from the surface + casing. Combine with each band's
@@ -197,6 +225,14 @@
           "raster-opacity": ["interpolate", ["linear"], ["zoom"], 15, 1, 15.5, 0],
         },
       },
+      // dark 2D basemap — same fade, hidden until dark mode swaps it in
+      {
+        id: "basemap-2d-dark", type: "raster", source: "basemapDark", maxzoom: 16,
+        layout: { visibility: "none" },
+        paint: {
+          "raster-opacity": ["interpolate", ["linear"], ["zoom"], 15, 1, 15.5, 0],
+        },
+      },
       // land cover under the roads — so the 3D scene isn't bare beige. Green
       // parks/forest and blue water (the flat 2D basemap supplies these below the
       // switch zoom; these are their 3D-mode counterparts, gated to z15+).
@@ -244,15 +280,23 @@
       {
         id: "buildings-3d", type: "fill-extrusion", source: "buildings", minzoom: 14,
         paint: {
-          "fill-extrusion-color": [
-            "match", ["%", ["to-number", ["get", "osm_way_id"], 0], 6],
-            0, "#c7c0ac", 1, "#b3ac98", 2, "#c1b9a4",
-            3, "#a9a28e", 4, "#cac3b0", 5, "#b8b19d", "#bcb6a6",
-          ],
+          "fill-extrusion-color": bldgDayColor,
           "fill-extrusion-height": ["coalesce", ["get", "height"], 6],
           "fill-extrusion-base": ["coalesce", ["get", "base"], 0],
           "fill-extrusion-opacity": 0.92,
           "fill-extrusion-vertical-gradient": true,
+        },
+      },
+      // neon footprint outline — MapLibre has no bloom, so the "glow" is faked
+      // with a bright cyan line on each building's base. Hidden until dark mode.
+      {
+        id: "buildings-edge", type: "line", source: "buildings", minzoom: 14,
+        layout: { visibility: "none", "line-join": "round" },
+        paint: {
+          "line-color": "#5ffbf1",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 15, 0.6, 19, 2],
+          "line-opacity": 0.85,
+          "line-blur": 0.6,
         },
       },
     ];
@@ -270,6 +314,18 @@
         L.minzoom = Math.max(SWITCH_Z, L.minzoom || 0);
       }
     }
+
+    // sky gradients: daytime (blue) and neon nightfall (deep navy → dusky horizon)
+    const DAY_SKY = {
+      "sky-color": "#9ec5f0", "sky-horizon-blend": 0.6,
+      "horizon-color": "#dce6ec", "horizon-fog-blend": 0.6,
+      "fog-color": "#e7ecdb", "fog-ground-blend": 0.2, "atmosphere-blend": 0.5,
+    };
+    const NIGHT_SKY = {
+      "sky-color": "#05081a", "sky-horizon-blend": 0.7,
+      "horizon-color": "#141d3a", "horizon-fog-blend": 0.6,
+      "fog-color": "#0a0d12", "fog-ground-blend": 0.25, "atmosphere-blend": 0.6,
+    };
 
     const map = new maplibregl.Map({
       container: "map",
@@ -300,6 +356,17 @@
             ],
             attribution: "© OpenStreetMap contributors © CARTO",
           },
+          // dark 2D basemap (CARTO Dark Matter) — the night-mode counterpart of
+          // Voyager, same tile scheme, swapped in when dark mode is on.
+          basemapDark: {
+            type: "raster", tileSize: 256, maxzoom: 20,
+            tiles: [
+              "https://a.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png",
+              "https://b.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png",
+              "https://c.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png",
+            ],
+            attribution: "© OpenStreetMap contributors © CARTO",
+          },
           hd: {
             type: "vector",
             tiles: [TILE_URL],
@@ -309,11 +376,7 @@
         },
         layers: styleLayers,
         light: { anchor: "map", color: "#ffffff", intensity: 0.4, position: [1.2, 210, 30] },
-        sky: {
-          "sky-color": "#9ec5f0", "sky-horizon-blend": 0.6,
-          "horizon-color": "#dce6ec", "horizon-fog-blend": 0.6,
-          "fog-color": "#e7ecdb", "fog-ground-blend": 0.2, "atmosphere-blend": 0.5,
-        },
+        sky: DAY_SKY,
       },
     });
 
@@ -447,6 +510,70 @@
       map.fitBounds(dataBounds, { padding: 40, pitch: 0, maxZoom: 16 });
     };
     document.getElementById("btn-north").onclick = () => map.easeTo({ bearing: 0, duration: 500 });
+
+    // ---- neon night mode -----------------------------------------------------
+    // A reversible theme: gray-black ground, nightfall sky, cyan buildings with a
+    // faked neon edge, and a static starfield when tilted. Pure client-side paint
+    // swap — no re-bake. Day is the default; the 🌙 button flips it.
+    const btnDark = document.getElementById("btn-dark");
+    const starsEl = document.getElementById("stars");
+    let darkOn = false;
+
+    // build a static starfield once (no animation — "static stars" as asked).
+    // Deterministic-ish sparse dots across the upper sky band.
+    (function seedStars() {
+      const N = 170;
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < N; i++) {
+        const s = document.createElement("i");
+        const size = (0.6 + Math.random() * 1.7).toFixed(2);
+        s.style.left = (Math.random() * 100).toFixed(2) + "%";
+        s.style.top = (Math.random() * 100).toFixed(2) + "%";
+        s.style.width = size + "px";
+        s.style.height = size + "px";
+        s.style.opacity = (0.35 + Math.random() * 0.6).toFixed(2);
+        frag.appendChild(s);
+      }
+      starsEl.appendChild(frag);
+    })();
+
+    // stars only make sense in dark mode AND when the sky fills the top of the
+    // screen (camera tilted). Driven off the actual pitch so it tracks any tilt.
+    const updateStars = () => starsEl.classList.toggle("on", darkOn && map.getPitch() > 8);
+    map.on("pitch", updateStars);
+
+    const applyTheme = (dark) => {
+      const set = (id, prop, val) => { if (map.getLayer(id)) map.setPaintProperty(id, prop, val); };
+      const vis = (id, on) => { if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none"); };
+      // ground + land cover
+      set("bg", "background-color", dark ? "#0a0d12" : "#e7ecdb");
+      set("green", "fill-color", dark ? "#10241a" : "#c6dcac");
+      set("water", "fill-color", dark ? "#0b1f2e" : "#9ec6e0");
+      // roads/junctions collapse to a near-black slate in dark so cyan pops
+      for (const id of ["lanes", "lanes-hi"]) set(id, "fill-color", dark ? "#1b202b" : laneColor);
+      set("intersections", "fill-color", dark ? "#1b202b" : "#5b6270");
+      // buildings: flat neon cyan (gradient off = emissive look) vs lit earth tones
+      set("buildings-3d", "fill-extrusion-color", dark ? bldgNeonColor : bldgDayColor);
+      set("buildings-3d", "fill-extrusion-vertical-gradient", !dark);
+      set("buildings-3d", "fill-extrusion-opacity", dark ? 0.96 : 0.92);
+      vis("buildings-edge", dark);
+      // 2D basemap swap (below the switch zoom)
+      vis("basemap-2d", !dark);
+      vis("basemap-2d-dark", dark);
+      // sky + light: flatten the sun in dark so cyan walls read uniform, not lit
+      map.setSky(dark ? NIGHT_SKY : DAY_SKY);
+      map.setLight(dark
+        ? { anchor: "map", color: "#bfefff", intensity: 0.85, position: [1.2, 210, 30] }
+        : { anchor: "map", color: "#ffffff", intensity: 0.4, position: [1.2, 210, 30] });
+      updateStars();
+    };
+
+    btnDark.onclick = () => {
+      darkOn = !darkOn;
+      btnDark.classList.toggle("on", darkOn);
+      btnDark.innerHTML = darkOn ? "☀️ Day" : "🌙 Dark";
+      applyTheme(darkOn);
+    };
 
     // layer toggles
     const toggle = (id, ...layers) => {
