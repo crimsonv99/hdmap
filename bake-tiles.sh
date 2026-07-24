@@ -30,8 +30,10 @@ done
 
 COMMON=(--force --drop-densest-as-needed --no-simplification-of-shared-nodes --preserve-input-order)
 
-echo "Baking BASE layers (lanes/intersections/buildings) z12-$MAXZOOM …"
+echo "Baking BASE layers (water/green/lanes/intersections/buildings) z12-$MAXZOOM …"
 tippecanoe -o build/base.pmtiles "${COMMON[@]}" -Z12 -z"$MAXZOOM" \
+  -L water:"$L/water.ndjson" \
+  -L green:"$L/green.ndjson" \
   -L lanes:"$L/lanes.ndjson" \
   -L intersections:"$L/intersections.ndjson" \
   -L buildings:"$L/buildings.ndjson"

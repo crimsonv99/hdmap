@@ -109,6 +109,7 @@
     const SRC_LAYER = {
       lanes: "lanes", markings: "markings", intersections: "intersections",
       "turn-arrows": "turn_arrows", buildings: "buildings",
+      water: "water", green: "green",
     };
     // bound panning to the baked city extent so you can't drift into empty tiles
     const CITY_BOUNDS = [[105.752, 20.952], [105.889, 21.108]]; // full bake bbox
@@ -195,6 +196,17 @@
         paint: {
           "raster-opacity": ["interpolate", ["linear"], ["zoom"], 15, 1, 15.5, 0],
         },
+      },
+      // land cover under the roads — so the 3D scene isn't bare beige. Green
+      // parks/forest and blue water (the flat 2D basemap supplies these below the
+      // switch zoom; these are their 3D-mode counterparts, gated to z15+).
+      {
+        id: "green", type: "fill", source: "green",
+        paint: { "fill-color": "#c6dcac", "fill-opacity": 0.9 },
+      },
+      {
+        id: "water", type: "fill", source: "water",
+        paint: { "fill-color": "#9ec6e0", "fill-opacity": 1 },
       },
       // intersection casing then fill (fuse road + junction into one surface)
       {
