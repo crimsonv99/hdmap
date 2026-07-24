@@ -336,6 +336,7 @@
       pitch: 55,      // 3D by default — this is the whole point of the MVP
       bearing: -18,
       maxPitch: 80,
+      doubleClickZoom: false, // repurposed: double-click copies the coordinate
       hash: true,     // F4Map-style: zoom/lat/lng/bearing/pitch live in the URL
       style: {
         version: 8,
@@ -489,6 +490,32 @@
     };
     document.getElementById("goto-btn").onclick = goTo;
     document.getElementById("goto").addEventListener("keydown", (e) => e.key === "Enter" && goTo());
+
+    // double-click anywhere on the canvas -> copy "lat, lng" at the cursor to the
+    // clipboard (same order/precision as the Fly-to box). Default dbl-click zoom is
+    // disabled above so this is a pure copy. A small toast confirms it. (Ported
+    // from the editor; clipboard works here because Pages serves over HTTPS.)
+    const copyToast = document.createElement("div");
+    copyToast.id = "copy-toast";
+    copyToast.style.cssText =
+      "position:absolute;z-index:9;pointer-events:none;padding:5px 9px;border-radius:7px;" +
+      "background:rgba(20,26,38,.92);color:#e8edf4;font:600 12px system-ui,sans-serif;" +
+      "border:1px solid rgba(74,108,255,.5);box-shadow:0 4px 14px rgba(0,0,0,.4);" +
+      "opacity:0;transition:opacity .15s;white-space:nowrap;transform:translate(-50%,-140%)";
+    document.getElementById("map").appendChild(copyToast);
+    let copyToastT = null;
+    map.on("dblclick", async (e) => {
+      const coord = `${e.lngLat.lat.toFixed(6)}, ${e.lngLat.lng.toFixed(6)}`; // lat, lng
+      let ok = true;
+      try { await navigator.clipboard.writeText(coord); }
+      catch (_) { ok = false; }
+      copyToast.textContent = (ok ? "📋 copied " : "⚠ copy blocked — ") + coord;
+      copyToast.style.left = e.point.x + "px";
+      copyToast.style.top = e.point.y + "px";
+      copyToast.style.opacity = "1";
+      if (copyToastT) clearTimeout(copyToastT);
+      copyToastT = setTimeout(() => (copyToast.style.opacity = "0"), 1300);
+    });
 
     // ---- auto 2D<->3D by zoom (like F4Map / Google) --------------------------
     // Below the switch zoom the map is flat 2D (street basemap); above it the
