@@ -221,10 +221,7 @@
         filter: ["!=", ["get", "intersection_kind"], "MapEdge"],
         layout: { "fill-sort-key": sortKey },
         paint: {
-          "fill-color": ["case",
-            ["==", ["get", "control"], "Signalled"], "#5c5340",
-            ["==", ["get", "intersection_kind"], "Terminus"], "#545b68",
-            "#5b6270"],
+          "fill-color": "#5b6270", // one continuous asphalt surface (signals shown by icon)
           "fill-opacity": 1,
         },
       },
