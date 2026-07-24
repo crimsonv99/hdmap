@@ -549,9 +549,13 @@
       set("bg", "background-color", dark ? "#0a0d12" : "#e7ecdb");
       set("green", "fill-color", dark ? "#10241a" : "#c6dcac");
       set("water", "fill-color", dark ? "#0b1f2e" : "#9ec6e0");
-      // roads/junctions collapse to a near-black slate in dark so cyan pops
-      for (const id of ["lanes", "lanes-hi"]) set(id, "fill-color", dark ? "#1b202b" : laneColor);
-      set("intersections", "fill-color", dark ? "#1b202b" : "#5b6270");
+      // roads/junctions: in dark they need to sit CLEARLY above the near-black
+      // ground (else the ways vanish), so a mid slate-blue surface + a faint cyan
+      // casing rim that ties them into the neon theme instead of receding.
+      for (const id of ["lanes", "lanes-hi"]) set(id, "fill-color", dark ? "#333d4d" : laneColor);
+      set("intersections", "fill-color", dark ? "#333d4d" : "#5b6270");
+      for (const id of ["lanes-edge", "lanes-edge-hi", "inter-edge"])
+        set(id, "line-color", dark ? "#2aa7b8" : "#1a1e25");
       // buildings: flat neon cyan (gradient off = emissive look) vs lit earth tones
       set("buildings-3d", "fill-extrusion-color", dark ? bldgNeonColor : bldgDayColor);
       set("buildings-3d", "fill-extrusion-vertical-gradient", !dark);
