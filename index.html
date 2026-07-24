@@ -48,11 +48,23 @@
     #legend label { display: flex; align-items: center; gap: 7px; padding: 2px 0; cursor: pointer; }
     #legend .sw { width: 13px; height: 13px; border-radius: 3px; flex: none; }
 
+    /* --- live camera readout (F4Map-style) --- */
+    #readout {
+      position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 5;
+      background: rgba(20,23,29,.82); color: #e7ecf3; border-radius: 8px;
+      padding: 7px 11px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      box-shadow: 0 1px 6px rgba(0,0,0,.25); white-space: nowrap;
+    }
+    #readout b { color: #9ec5f0; font-weight: 600; }
+    @media (max-width: 640px) { #readout { display: none; } }
+
     .maplibregl-ctrl-attrib { font-size: 10px; }
   </style>
 </head>
 <body>
   <div id="map"></div>
+
+  <div id="readout">zoom <b id="r-zoom">–</b> · tilt <b id="r-tilt">–</b>° · dir <b id="r-dir">–</b>°</div>
 
   <div id="search">
     <input id="goto" placeholder="Fly to  lat, lng   (e.g. 21.0369, 105.7809)" />
@@ -233,11 +245,12 @@
       center: [105.8520, 21.0310], // Hoan Kiem lake — dense central Hanoi
       zoom: 15,
       minZoom: 12,
-      maxZoom: 19,
+      maxZoom: 20,
       maxBounds: CITY_BOUNDS,
       pitch: 55,      // 3D by default — this is the whole point of the MVP
       bearing: -18,
       maxPitch: 80,
+      hash: true,     // F4Map-style: zoom/lat/lng/bearing/pitch live in the URL
       style: {
         version: 8,
         sources: {
@@ -249,7 +262,7 @@
           hd: {
             type: "vector",
             tiles: [TILE_URL],
-            minzoom: 12, maxzoom: 16, // tiles baked to z16; MapLibre overzooms above
+            minzoom: 12, maxzoom: 17, // tiles baked to z17; MapLibre overzooms above
             attribution: "© OpenStreetMap contributors · osm2streets",
           },
         },
@@ -266,6 +279,18 @@
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
     map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: true }), "top-right");
+
+    // live camera readout (zoom / tilt = pitch / dir = bearing), F4Map-style
+    const rZoom = document.getElementById("r-zoom");
+    const rTilt = document.getElementById("r-tilt");
+    const rDir = document.getElementById("r-dir");
+    const updateReadout = () => {
+      rZoom.textContent = map.getZoom().toFixed(1);
+      rTilt.textContent = Math.round(map.getPitch());
+      rDir.textContent = ((Math.round(map.getBearing()) % 360) + 360) % 360;
+    };
+    map.on("move", updateReadout);
+    updateReadout();
 
     let dataBounds = CITY_BOUNDS;
     fetch(META).then((r) => r.json()).then((m) => {
