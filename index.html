@@ -754,6 +754,7 @@
 
 <body>
   <div id="map"></div>
+  <div id="mode-banner" style="display:none;position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:6;background:rgba(232,163,61,.96);color:#3a2a0a;font:600 13px/1.4 system-ui,sans-serif;padding:8px 14px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.25);max-width:min(560px,92vw);text-align:center;"></div>
   <div id="panel">
     <!-- header stays visible when the panel is minimized, so the whole tool
          collapses to this single row and hands the map back its screen space -->
@@ -964,6 +965,23 @@
       const emptyFC = { type: "FeatureCollection", features: [] };
       const waterGeojson = await fetch("data/water.geojson").then((r) => r.json()).catch(() => emptyFC);
       const greenGeojson = await fetch("data/green.geojson").then((r) => r.json()).catch(() => emptyFC);
+      // raw roads (one line per way) — the LOD gateway's overview mode: populated
+      // (and HD layers empty) when the area is too big for osm2streets.
+      const rawRoadsGeojson = await fetch("data/raw_roads.geojson").then((r) => r.json()).catch(() => emptyFC);
+      // LOD gateway UX: in "raw" mode (area too big for osm2streets) show a banner
+      // telling the user how to get HD back. `mode` comes from meta.json/version.json.
+      const modeBanner = document.getElementById("mode-banner");
+      const applyMode = (m) => {
+        if (m && m.mode === "raw") {
+          modeBanner.style.display = "block";
+          modeBanner.textContent =
+            `Overview mode — ${(m.roads || 0).toLocaleString()} roads. HD lanes/markings/3D render under ` +
+            `${(m.limit || 4000).toLocaleString()} roads; fetch or reset to a smaller area for full detail.`;
+        } else {
+          modeBanner.style.display = "none";
+        }
+      };
+      applyMode(meta);
       let currentLanes = lanesGeojson; // latest lane features (updated on live reload)
       let currentIntersections = intersectionsGeojson; // kept for node (intersection) editing
       let currentBuildings = buildingsGeojson; // kept for building (height) editing
@@ -1131,6 +1149,23 @@
           id: "water", type: "fill", source: "water",
           paint: { "fill-color": "#9ec6e0", "fill-opacity": 1 },
         },
+        // RAW ROADS — the LOD gateway's overview mode. Empty (invisible) in HD
+        // mode; when the area is too big for osm2streets this is the road render:
+        // one line per OSM way, coloured + widened by highway class.
+        {
+          id: "raw-roads", type: "line", source: "raw-roads",
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-color": ["match", ["get", "highway"],
+              "motorway", "#e06a4b", "trunk", "#e06a4b",
+              "primary", "#e8a33d", "secondary", "#e8c84a",
+              "tertiary", "#8a90a0", "residential", "#9aa0aa", "service", "#b6bcc6",
+              "#9aa0aa"],
+            "line-width": ["interpolate", ["linear"], ["zoom"],
+              11, ["match", ["get", "highway"], "motorway", 2.5, "trunk", 2.5, "primary", 2, "secondary", 1.6, 0.8],
+              16, ["match", ["get", "highway"], "motorway", 9, "trunk", 9, "primary", 7, "secondary", 5.5, 3]],
+          },
+        },
         // Intersections: real junctions only. osm2streets also emits non-junction
         // nodes we hide — "Connection" (a road split for a tag change) and
         // "MapEdge" (data boundary) — which otherwise litter the map with dark
@@ -1297,6 +1332,7 @@
             markings: { type: "geojson", data: "data/markings.geojson" },
             water: { type: "geojson", data: waterGeojson },
             green: { type: "geojson", data: greenGeojson },
+            "raw-roads": { type: "geojson", data: rawRoadsGeojson },
             // highlight sources — fed via setData on hover/select (setFilter is
             // gated on isStyleLoaded, which never settles in some embeds)
             "hl-hover": { type: "geojson", data: { type: "FeatureCollection", features: [] } },
@@ -1730,17 +1766,21 @@
       let missed = 0;
 
       const reloadSources = async (v) => {
-        const [ln, mk, it, ta, bd] = await Promise.all([
+        const [ln, mk, it, ta, bd, rw, mt] = await Promise.all([
           fetch(`data/lanes.geojson?v=${v}`).then((r) => r.json()),
           fetch(`data/markings.geojson?v=${v}`).then((r) => r.json()),
           fetch(`data/intersections.geojson?v=${v}`).then((r) => r.json()),
           fetch(`data/turn_arrows.geojson?v=${v}`).then((r) => r.json()).catch(() => null),
           fetch(`data/buildings.geojson?v=${v}`).then((r) => r.json()).catch(() => null),
+          fetch(`data/raw_roads.geojson?v=${v}`).then((r) => r.json()).catch(() => null),
+          fetch(`data/meta.json?v=${v}`).then((r) => r.json()).catch(() => null),
         ]);
         map.getSource("lanes").setData(ln);
         map.getSource("markings").setData(mk);
         map.getSource("intersections").setData(it);
         if (ta) map.getSource("turn-arrows").setData(ta);
+        if (rw) map.getSource("raw-roads")?.setData(rw); // LOD overview layer
+        applyMode(mt); // flip the HD/overview banner if the area size crossed the gateway
         // source gets the shrunk (gapped) copy for display; currentBuildings keeps
         // the true geometry for editing/height lookup.
         if (bd) { map.getSource("buildings")?.setData(shrinkBuildings(bd)); currentBuildings = bd; }
