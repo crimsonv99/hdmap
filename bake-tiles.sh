@@ -29,12 +29,12 @@ for f in lanes markings intersections turn_arrows buildings; do
   [ -s "$L/$f.ndjson" ] || { echo "missing/empty: $L/$f.ndjson (run bake-city.mjs first)"; exit 1; }
 done
 
-# Keep ONLY the attributes the viewer actually reads (style + click popup); drop
-# everything else (osm_way_ids arrays, movements, and the dozens of name:*/addr:*
-# tags osmium put on water/green). This is a big size win with zero visual change.
+# Keep ONLY the attributes the viewer actually reads (style + click popup + the
+# nav lane-highlight, which needs osm_way_ids + direction to match lanes to the
+# route's ways). Everything else is dropped for size.
 KEEP=(-y type -y layer -y allowed_turns -y width -y speed_limit -y control
-  -y intersection_kind -y bearing -y turns -y osm_way_id -y height -y base
-  -y height_source -y name -y levels)
+  -y intersection_kind -y bearing -y turns -y osm_way_id -y osm_way_ids -y direction
+  -y height -y base -y height_source -y name -y levels)
 COMMON=(--force --drop-densest-as-needed --no-simplification-of-shared-nodes --preserve-input-order "${KEEP[@]}")
 
 echo "Baking BASE layers (water/green/lanes/intersections/buildings) z$BASE_MINZOOM-$MAXZOOM …"

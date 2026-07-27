@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>3D City Map — osm2streets + MapLibre</title>
+  <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet" />
+  <style>
+    html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    #map { position: absolute; inset: 0; }
+
+    /* --- floating search bar (Google-Maps style) --- */
+    #search {
+      position: absolute; top: 12px; left: 12px; z-index: 5;
+      display: flex; gap: 6px; align-items: center;
+      background: #fff; border-radius: 24px; padding: 6px 8px 6px 16px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.22); width: min(360px, calc(100vw - 24px));
+    }
+    #search input {
+      border: 0; outline: 0; flex: 1; font-size: 14px; background: transparent;
+    }
+    #search button {
+      border: 0; background: #2f6bd6; color: #fff; width: 30px; height: 30px;
+      border-radius: 50%; cursor: pointer; font-size: 15px; line-height: 1;
+    }
+    #search .hint { color: #9aa0aa; font-size: 11px; }
+
+    /* --- bottom-right view controls --- */
+    #controls {
+      position: absolute; bottom: 26px; right: 12px; z-index: 5;
+      display: flex; flex-direction: column; gap: 8px; align-items: stretch;
+    }
+    #controls button {
+      background: #fff; border: 0; border-radius: 8px; padding: 9px 12px;
+      box-shadow: 0 1px 6px rgba(0,0,0,.22); cursor: pointer; font-size: 13px;
+      color: #23303f; font-weight: 600; white-space: nowrap;
+    }
+    #controls button.on { background: #2f6bd6; color: #fff; }
+
+    /* --- legend / layers card --- */
+    #legend {
+      position: absolute; bottom: 26px; left: 12px; z-index: 5;
+      background: rgba(255,255,255,.94); border-radius: 10px; padding: 10px 12px;
+      box-shadow: 0 1px 8px rgba(0,0,0,.2); font-size: 12px; color: #23303f;
+      max-width: 200px;
+    }
+    #legend b { display: block; margin-bottom: 6px; font-size: 12px; }
+    #legend label { display: flex; align-items: center; gap: 7px; padding: 2px 0; cursor: pointer; }
+    #legend .sw { width: 13px; height: 13px; border-radius: 3px; flex: none; }
+
+    .maplibregl-ctrl-attrib { font-size: 10px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div id="search">
+    <input id="goto" placeholder="Fly to  lat, lng   (e.g. 21.0369, 105.7809)" />
+    <span class="hint" id="goto-hint"></span>
+    <button id="goto-btn" title="Fly">➜</button>
+  </div>
+
+  <div id="controls">
+    <button id="btn-3d" class="on">3D&nbsp;view</button>
+    <button id="btn-frame">Frame&nbsp;city</button>
+    <button id="btn-north" title="Reset bearing to north">⌖ North</button>
+  </div>
+
+  <div id="legend">
+    <b>Layers</b>
+    <label><span class="sw" style="background:#5b6270"></span><input type="checkbox" id="t-roads" checked hidden>Roads &amp; lanes</label>
+    <label><span class="sw" style="background:#ffffff;border:1px solid #ccc"></span><input type="checkbox" id="t-mark" checked hidden>Lane markings</label>
+    <label><span class="sw" style="background:#d7dbe3"></span><input type="checkbox" id="t-turn" checked hidden>Turn arrows</label>
+    <label><span class="sw" style="background:#bcb6a6"></span><input type="checkbox" id="t-bldg" checked hidden>Buildings (3D)</label>
+    <label><span class="sw" style="background:#3aa0ff"></span><input type="checkbox" id="t-sat" hidden>Satellite base</label>
+  </div>
+
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+  <script>
+    // ============================================================================
+    // 3D City Map — MVP
+    // A read-only, Google-Maps-style slippy viewer of the HD scene produced by the
+    // hdmap tool (osm2streets lanes/markings + inferred 3D buildings). It loads the
+    // pre-baked GeoJSON layers straight from ./data and paints them with the SAME
+    // style as the editor — no server, no WASM, no editing. See README.md for the
+    // PMTiles path that replaces raw GeoJSON when this needs to scale past one city.
+    // ============================================================================
+
+    const DATA = {
+      lanes: "data/lanes.geojson",
+      markings: "data/markings.geojson",
+      intersections: "data/intersections.geojson",
+      turnArrows: "data/turn_arrows.geojson",
+      buildings: "data/buildings.geojson",
+      meta: "data/meta.json",
+    };
+
+    // ---- shared paint (copied verbatim from the editor so it looks identical) ---
+    const LYR = ["coalesce", ["get", "layer"], 0];
+    const sortKey = ["coalesce", ["get", "layer"], 0];
+    const laneColor = [
+      "match", ["get", "type"],
+      "Driving", "#5b6270", "Parking", "#494f5b", "Sidewalk", "#8a90a0",
+      "Footway", "#8a90a0", "Shoulder", "#40454f", "Biking", "#2f6b4f",
+      "Bus", "#6b3a3a", "SharedLeftTurn", "#6b5f3a", "LightRail", "#5a4a6b",
+      "#565c68",
+    ];
+    const markColor = [
+      "match", ["get", "type"],
+      "center line", "#e8c84a", "vehicle stop line", "#ffffff",
+      "lane arrow", "#d7dbe3", "lane separator", "#c9cdd6",
+      "sidewalk corner", "#8a90a0", "#ffffff",
+    ];
+
+    // roads are split into casings (drawn first) then fills (drawn after) so the
+    // fills swallow every internal seam, leaving only the outer perimeter dark.
+    const bandEdges = (sfx, flt) => [{
+      id: "lanes-edge" + sfx, type: "line", source: "lanes", filter: flt,
+      layout: { "line-sort-key": sortKey, "line-join": "round", "line-cap": "round" },
+      paint: {
+        "line-color": "#1a1e25",
+        "line-width": ["interpolate", ["linear"], LYR, 0, 1.4, 1, 2.6, 4, 4.2],
+      },
+    }];
+    const bandFills = (sfx, flt) => [
+      {
+        id: "lanes" + sfx, type: "fill", source: "lanes", filter: flt,
+        layout: { "fill-sort-key": sortKey },
+        paint: { "fill-color": laneColor, "fill-opacity": 1 },
+      },
+      {
+        id: "turn-left" + sfx, type: "fill", source: "lanes",
+        filter: ["all", flt, ["==", ["get", "type"], "Driving"],
+          ["in", "left", ["to-string", ["get", "allowed_turns"]]]],
+        layout: { "fill-sort-key": sortKey },
+        paint: { "fill-color": "#2ea6a6", "fill-opacity": 0.55 },
+      },
+      {
+        id: "turn-right" + sfx, type: "fill", source: "lanes",
+        filter: ["all", flt, ["==", ["get", "type"], "Driving"],
+          ["in", "right", ["to-string", ["get", "allowed_turns"]]]],
+        layout: { "fill-sort-key": sortKey },
+        paint: { "fill-color": "#c9772e", "fill-opacity": 0.55 },
+      },
+      {
+        id: "markings" + sfx, type: "fill", source: "markings", filter: flt,
+        layout: { "fill-sort-key": sortKey },
+        paint: { "fill-color": markColor, "fill-opacity": 0.9 },
+      },
+      {
+        id: "turn-arrows" + sfx, type: "symbol", source: "turn-arrows", filter: flt,
+        minzoom: 15,
+        layout: {
+          "icon-image": ["get", "turns"], "icon-rotate": ["get", "bearing"],
+          "icon-rotation-alignment": "map",
+          "icon-size": ["interpolate", ["exponential", 2], ["zoom"], 15, 0.05, 19, 0.8, 22, 6.4],
+          "icon-allow-overlap": true, "icon-ignore-placement": true,
+          "symbol-sort-key": sortKey,
+        },
+      },
+    ];
+
+    const styleLayers = [
+      { id: "bg", type: "background", paint: { "background-color": "#e7ecdb" } },
+      { id: "satellite", type: "raster", source: "sat", layout: { visibility: "none" } },
+      // intersection casing then fill (fuse road + junction into one surface)
+      {
+        id: "inter-edge", type: "line", source: "intersections",
+        filter: ["!", ["in", ["get", "intersection_kind"], ["literal", ["Connection", "MapEdge"]]]],
+        layout: { "line-sort-key": sortKey, "line-join": "round" },
+        paint: { "line-color": "#1a1e25", "line-width": 1.4, "line-opacity": 0.9 },
+      },
+      ...bandEdges("", ["<", LYR, 1]),
+      {
+        id: "intersections", type: "fill", source: "intersections",
+        filter: ["!=", ["get", "intersection_kind"], "MapEdge"],
+        layout: { "fill-sort-key": sortKey },
+        paint: {
+          "fill-color": ["case",
+            ["==", ["get", "control"], "Signalled"], "#5c5340",
+            ["==", ["get", "intersection_kind"], "Terminus"], "#545b68",
+            "#5b6270"],
+          "fill-opacity": 1,
+        },
+      },
+      ...bandFills("", ["<", LYR, 1]),
+      // elevated roads (bridges) on top, same casing→fill order
+      ...bandEdges("-hi", [">=", LYR, 1]),
+      ...bandFills("-hi", [">=", LYR, 1]),
+      {
+        id: "inter-signal", type: "symbol", source: "intersections",
+        filter: ["==", ["get", "control"], "Signalled"], minzoom: 15,
+        layout: {
+          "icon-image": "traffic-signal",
+          "icon-size": ["interpolate", ["exponential", 2], ["zoom"], 15, 0.16, 19, 0.8],
+          "icon-allow-overlap": true, "icon-ignore-placement": true,
+        },
+      },
+      // 3D buildings — inferred height; flat when top-down, rises once tilted
+      {
+        id: "buildings-3d", type: "fill-extrusion", source: "buildings",
+        paint: {
+          "fill-extrusion-color": [
+            "match", ["%", ["to-number", ["get", "osm_way_id"], 0], 6],
+            0, "#c7c0ac", 1, "#b3ac98", 2, "#c1b9a4",
+            3, "#a9a28e", 4, "#cac3b0", 5, "#b8b19d", "#bcb6a6",
+          ],
+          "fill-extrusion-height": ["coalesce", ["get", "height"], 6],
+          "fill-extrusion-base": ["coalesce", ["get", "base"], 0],
+          "fill-extrusion-opacity": 0.92,
+          "fill-extrusion-vertical-gradient": true,
+        },
+      },
+    ];
+
+    const map = new maplibregl.Map({
+      container: "map",
+      center: [105.780890, 21.036860],
+      zoom: 16.5,
+      pitch: 55,      // 3D by default — this is the whole point of the MVP
+      bearing: -18,
+      maxPitch: 80,
+      style: {
+        version: 8,
+        sources: {
+          sat: {
+            type: "raster", tileSize: 256,
+            tiles: ["https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+            attribution: "Imagery © Esri, Maxar, Earthstar Geographics",
+          },
+          lanes: { type: "geojson", data: DATA.lanes, attribution: "© OpenStreetMap contributors · osm2streets" },
+          markings: { type: "geojson", data: DATA.markings },
+          intersections: { type: "geojson", data: DATA.intersections },
+          "turn-arrows": { type: "geojson", data: DATA.turnArrows },
+          buildings: { type: "geojson", data: DATA.buildings },
+        },
+        layers: styleLayers,
+        light: { anchor: "map", color: "#ffffff", intensity: 0.4, position: [1.2, 210, 30] },
+        sky: {
+          "sky-color": "#9ec5f0", "sky-horizon-blend": 0.6,
+          "horizon-color": "#dce6ec", "horizon-fog-blend": 0.6,
+          "fog-color": "#e7ecdb", "fog-ground-blend": 0.2, "atmosphere-blend": 0.5,
+        },
+      },
+    });
+
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+    map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
+    map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: true }), "top-right");
+
+    // frame the whole baked area from meta.json (the bbox of what was rendered)
+    let dataBounds = null;
+    fetch(DATA.meta).then((r) => r.json()).then((m) => {
+      if (m.bbox) {
+        dataBounds = [[m.bbox[0], m.bbox[1]], [m.bbox[2], m.bbox[3]]];
+      }
+    }).catch(() => {});
+
+    // ---- turn-arrow + traffic-signal icons, drawn on demand (same as editor) ----
+    const makeArrowIcon = (key) => {
+      const S = 64, cx = S / 2, midY = S * 0.52, baseY = S - 6, topY = 8;
+      const cv = document.createElement("canvas"); cv.width = S; cv.height = S;
+      const g = cv.getContext("2d");
+      g.strokeStyle = "#f2f4f8"; g.fillStyle = "#f2f4f8";
+      g.lineWidth = 7; g.lineCap = "round"; g.lineJoin = "round";
+      const head = (x, y, ang) => {
+        const dx = Math.sin(ang), dy = -Math.cos(ang), L = 15, W = 10;
+        const bx = x - dx * L, by = y - dy * L, px = -dy, py = dx;
+        g.beginPath(); g.moveTo(x, y);
+        g.lineTo(bx + px * W, by + py * W); g.lineTo(bx - px * W, by - py * W);
+        g.closePath(); g.fill();
+      };
+      g.beginPath(); g.moveTo(cx, baseY); g.lineTo(cx, midY); g.stroke();
+      for (const d of key.split("_")) {
+        if (d === "through") {
+          g.beginPath(); g.moveTo(cx, midY); g.lineTo(cx, topY + 6); g.stroke(); head(cx, topY, 0);
+        } else if (d === "left") {
+          g.beginPath(); g.moveTo(cx, midY); g.lineTo(14, midY - 4); g.stroke(); head(8, midY - 4, -Math.PI / 2);
+        } else if (d === "right") {
+          g.beginPath(); g.moveTo(cx, midY); g.lineTo(S - 14, midY - 4); g.stroke(); head(S - 8, midY - 4, Math.PI / 2);
+        }
+      }
+      return g.getImageData(0, 0, S, S);
+    };
+    const makeSignalIcon = () => {
+      const S = 64, cv = document.createElement("canvas"); cv.width = S; cv.height = S;
+      const g = cv.getContext("2d");
+      const w = 26, h = 54, x = (S - w) / 2, y = (S - h) / 2, r = 9;
+      g.fillStyle = "#14171d"; g.strokeStyle = "#eef1f6"; g.lineWidth = 3.5;
+      g.beginPath(); g.moveTo(x + r, y);
+      g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+      g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r);
+      g.closePath(); g.fill(); g.stroke();
+      const cx = S / 2, rad = 6.5;
+      [["#ff5b5b", y + 13], ["#ffcf4a", y + 27], ["#4ddc7a", y + 41]].forEach(([c, cy]) => {
+        g.beginPath(); g.arc(cx, cy, rad, 0, Math.PI * 2); g.fillStyle = c; g.fill();
+      });
+      return g.getImageData(0, 0, S, S);
+    };
+    map.on("styleimagemissing", (e) => {
+      if (map.hasImage(e.id)) return;
+      try {
+        const img = e.id === "traffic-signal" ? makeSignalIcon() : makeArrowIcon(e.id);
+        map.addImage(e.id, img, { pixelRatio: 2 });
+      } catch (_) {}
+    });
+
+    // ---- click a road / building for a quick info popup (read-only) ----
+    map.on("load", () => {
+      map.on("click", (e) => {
+        const f = map.queryRenderedFeatures(e.point, {
+          layers: ["buildings-3d", "lanes", "lanes-hi"],
+        })[0];
+        if (!f) return;
+        const p = f.properties || {};
+        let html;
+        if (f.layer.id.startsWith("buildings")) {
+          html = `<b>Building</b><br>${p.name ? p.name + "<br>" : ""}` +
+            `height ≈ ${Math.round(p.height ?? 6)} m` +
+            `${p.height_source ? " (" + p.height_source + ")" : ""}` +
+            `${p.levels ? "<br>" + p.levels + " levels" : ""}`;
+        } else {
+          html = `<b>${p.type || "Road"} lane</b>` +
+            `${p.width ? "<br>width ≈ " + (+p.width).toFixed(1) + " m" : ""}` +
+            `${p.speed_limit ? "<br>speed " + p.speed_limit : ""}`;
+        }
+        new maplibregl.Popup({ closeButton: false })
+          .setLngLat(e.lngLat).setHTML(html).addTo(map);
+      });
+      map.on("mouseenter", "buildings-3d", () => (map.getCanvas().style.cursor = "pointer"));
+      map.on("mouseleave", "buildings-3d", () => (map.getCanvas().style.cursor = ""));
+    });
+
+    // ---- UI wiring ----
+    const goTo = () => {
+      const hint = document.getElementById("goto-hint");
+      const raw = document.getElementById("goto").value.trim();
+      const m = raw.match(/^(-?\d+(?:\.\d+)?)\s*[,\s]\s*(-?\d+(?:\.\d+)?)$/);
+      if (!m) { hint.textContent = "lat, lng"; return; }
+      const lat = +m[1], lng = +m[2];
+      if (Math.abs(lat) > 90 || Math.abs(lng) > 180) { hint.textContent = "range"; return; }
+      hint.textContent = "";
+      map.flyTo({ center: [lng, lat], zoom: 18, pitch: 55, speed: 1.4 });
+      new maplibregl.Marker({ color: "#2f6bd6" }).setLngLat([lng, lat]).addTo(map);
+    };
+    document.getElementById("goto-btn").onclick = goTo;
+    document.getElementById("goto").addEventListener("keydown", (e) => e.key === "Enter" && goTo());
+
+    const btn3d = document.getElementById("btn-3d");
+    btn3d.onclick = () => {
+      const on = !btn3d.classList.contains("on");
+      btn3d.classList.toggle("on", on);
+      map.easeTo({ pitch: on ? 55 : 0, duration: 600 });
+    };
+    document.getElementById("btn-frame").onclick = () => {
+      if (dataBounds) map.fitBounds(dataBounds, { padding: 60, pitch: 45, maxZoom: 18 });
+    };
+    document.getElementById("btn-north").onclick = () => map.easeTo({ bearing: 0, duration: 500 });
+
+    // layer toggles
+    const toggle = (id, ...layers) => {
+      const cb = document.getElementById(id);
+      cb.parentElement.addEventListener("click", () => {
+        cb.checked = !cb.checked;
+        const v = cb.checked ? "visible" : "none";
+        layers.forEach((l) => map.getLayer(l) && map.setLayoutProperty(l, "visibility", v));
+      });
+    };
+    map.on("load", () => {
+      toggle("t-roads", "lanes", "lanes-edge", "lanes-hi", "lanes-edge-hi", "intersections", "inter-edge");
+      toggle("t-mark", "markings", "markings-hi");
+      toggle("t-turn", "turn-left", "turn-right", "turn-arrows", "turn-left-hi", "turn-right-hi", "turn-arrows-hi");
+      toggle("t-bldg", "buildings-3d");
+      // satellite base toggle
+      const sat = document.getElementById("t-sat");
+      sat.parentElement.addEventListener("click", () => {
+        sat.checked = !sat.checked;
+        map.setLayoutProperty("satellite", "visibility", sat.checked ? "visible" : "none");
+      });
+    });
+  </script>
+</body>
+</html>

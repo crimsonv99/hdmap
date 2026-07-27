@@ -37,6 +37,118 @@
     }
     #controls button.on { background: #2f6bd6; color: #fff; }
 
+    /* --- navigation: pick-mode hint pill + snapped-point markers --- */
+    #nav-hint {
+      position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+      z-index: 6; display: none; background: rgba(20,23,29,.92); color: #eef1f6;
+      padding: 7px 15px; border-radius: 20px; font-size: 13px; font-weight: 600;
+      box-shadow: 0 1px 8px rgba(0,0,0,.32); white-space: nowrap;
+    }
+    #nav-hint.on { display: block; }
+    #nav-summary {
+      position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%);
+      z-index: 6; display: none; align-items: center; gap: 10px;
+      background: rgba(255,255,255,.96); color: #16202c; border-radius: 12px;
+      padding: 9px 16px; box-shadow: 0 2px 12px rgba(0,0,0,.28);
+      font-size: 15px; font-weight: 700; white-space: nowrap;
+    }
+    #nav-summary.on { display: flex; }
+    #nav-summary .dist { color: #2f6bd6; }
+    #nav-summary .sep { opacity: .3; font-weight: 400; }
+    #nav-summary .clear { cursor: pointer; color: #8a94a3; border-left: 1px solid #e3e7ec; padding-left: 11px; }
+    #nav-summary .clear:hover { color: #e5484d; }
+
+    /* --- directions panel (turn-by-turn list, Google-style) --- */
+    #nav-panel {
+      position: absolute; top: 82px; left: 12px; z-index: 7; width: 330px;
+      max-height: calc(100% - 210px); display: none; flex-direction: column;
+      background: #fff; border-radius: 14px; box-shadow: 0 4px 22px rgba(0,0,0,.28);
+      overflow: hidden; color: #1a2430; font-size: 13px;
+    }
+    #nav-panel.on { display: flex; }
+    #nav-panel .np-head { padding: 14px 16px 12px; border-bottom: 1px solid #eef1f5; position: relative; }
+    #nav-panel .np-eta { font-size: 22px; font-weight: 800; color: #e8590c; }
+    #nav-panel .np-eta small { font-size: 13px; font-weight: 600; color: #5b6470; margin-left: 6px; }
+    #nav-panel .np-sub { margin-top: 3px; color: #5b6470; font-size: 12px; }
+    #nav-panel .np-hide {
+      position: absolute; top: 12px; right: 12px; cursor: pointer; border: 0;
+      background: #f1f3f6; width: 26px; height: 26px; border-radius: 50%;
+      font-size: 16px; line-height: 1; color: #43506a; font-weight: 700;
+    }
+    #nav-panel .np-hide:hover { background: #e6e9ee; }
+    #nav-panel .np-od { padding: 10px 16px; border-bottom: 1px solid #eef1f5; }
+    #nav-panel .np-od .row { display: flex; align-items: center; gap: 9px; padding: 3px 0; }
+    #nav-panel .np-od .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+    #nav-panel .np-od .dot.a { background: #22c55e; }
+    #nav-panel .np-od .dot.b { background: #ef4444; }
+    #nav-panel .np-od .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #nav-panel .np-swap { margin-left: auto; cursor: pointer; border: 0; background: none; font-size: 16px; color: #5b6470; }
+    #nav-panel .np-swap:hover { color: #2f6bd6; }
+    #nav-panel .np-steps { overflow-y: auto; padding: 2px 0; }
+    #nav-panel .step { display: flex; gap: 12px; padding: 11px 16px; border-bottom: 1px solid #f4f6f8; }
+    #nav-panel .step .ic { font-size: 19px; line-height: 1.1; color: #2f6bd6; flex: none; width: 22px; text-align: center; }
+    #nav-panel .step .tx { flex: 1; line-height: 1.35; }
+    #nav-panel .step .ds { color: #8a94a3; font-size: 12px; margin-top: 3px; }
+    #nav-panel .step.arrive .ic { color: #e5484d; }
+    #nav-steps-btn {
+      position: absolute; top: 82px; left: 12px; z-index: 7; display: none;
+      background: #2f6bd6; color: #fff; border: 0; border-radius: 10px;
+      padding: 9px 13px; font-weight: 700; font-size: 13px; cursor: pointer;
+      box-shadow: 0 2px 10px rgba(0,0,0,.25);
+    }
+    #nav-steps-btn.on { display: block; }
+    #nav-panel .np-go {
+      display: block; width: 100%; margin-top: 12px; padding: 10px; border: 0;
+      border-radius: 9px; background: #1a8f4c; color: #fff; font-size: 15px;
+      font-weight: 800; cursor: pointer; letter-spacing: .5px;
+    }
+    #nav-panel .np-go:hover { background: #16803f; }
+
+    /* --- 3D drive mode: maneuver banner, speedo, car, bottom bar --- */
+    #drive-ui { display: none; }
+    #drive-ui.on { display: block; }
+    #drive-banner {
+      position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+      z-index: 8; display: flex; align-items: center; gap: 14px; max-width: 82vw;
+      background: rgba(18,22,30,.94); color: #fff; padding: 12px 20px 12px 16px;
+      border-radius: 14px; box-shadow: 0 4px 18px rgba(0,0,0,.4);
+    }
+    #drive-banner .b-ic { font-size: 34px; line-height: 1; color: #4da3ff; flex: none; }
+    #drive-banner .b-dist { font-size: 26px; font-weight: 800; flex: none; }
+    #drive-banner .b-dist small { font-size: 15px; font-weight: 600; opacity: .8; margin-left: 2px; }
+    #drive-banner .b-road { font-size: 17px; font-weight: 600; opacity: .95; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #drive-speed {
+      position: absolute; left: 18px; bottom: 90px; z-index: 8; width: 76px; height: 76px;
+      border-radius: 50%; background: #fff; box-shadow: 0 3px 14px rgba(0,0,0,.3);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; color: #16202c;
+    }
+    #drive-speed b { font-size: 26px; font-weight: 800; line-height: 1; }
+    #drive-speed span { font-size: 10px; font-weight: 600; color: #6b7684; opacity: .7; }
+    #drive-bottom {
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+      z-index: 8; display: flex; align-items: center; gap: 16px;
+      background: rgba(255,255,255,.97); color: #16202c; padding: 10px 14px;
+      border-radius: 14px; box-shadow: 0 3px 16px rgba(0,0,0,.3); font-size: 13px;
+    }
+    #drive-bottom .big { font-size: 18px; font-weight: 800; }
+    #drive-bottom .muted { color: #6b7684; }
+    #drive-bottom button {
+      border: 0; background: #eef1f5; color: #23303f; width: 40px; height: 40px;
+      border-radius: 50%; cursor: pointer; font-size: 17px; font-weight: 700;
+    }
+    #drive-bottom button.exit { background: #fdecec; color: #d63a3a; }
+    #drive-bottom button:hover { filter: brightness(.95); }
+    .drive-car { filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)); }
+    .nav-pin {
+      width: 26px; height: 26px; border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg); border: 2px solid #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,.4); cursor: pointer;
+      display: grid; place-items: center;
+    }
+    .nav-pin b { transform: rotate(45deg); color: #fff; font-size: 12px; font-weight: 800; }
+    .nav-pin.a { background: #22c55e; }
+    .nav-pin.b { background: #ef4444; }
+
     /* --- legend / layers card --- */
     #legend {
       position: absolute; bottom: 26px; left: 12px; z-index: 5;
@@ -81,6 +193,24 @@
 <body>
   <div id="map"></div>
   <div id="stars"></div>
+  <div id="nav-hint"></div>
+  <div id="nav-summary"></div>
+  <div id="nav-panel"></div>
+  <button id="nav-steps-btn">📋 Directions ›</button>
+
+  <div id="drive-ui">
+    <div id="drive-banner">
+      <span class="b-ic"></span>
+      <span class="b-dist"></span>
+      <span class="b-road"></span>
+    </div>
+    <div id="drive-speed"><b>0</b><span>km/h</span></div>
+    <div id="drive-bottom">
+      <button class="pause" title="Pause / resume">⏸</button>
+      <div><span class="big remain">–</span> <span class="muted dist">–</span><br><span class="muted eta">–</span></div>
+      <button class="exit" title="Exit drive mode">✕</button>
+    </div>
+  </div>
 
   <div id="readout">zoom <b id="r-zoom">–</b> · tilt <b id="r-tilt">–</b>° · dir <b id="r-dir">–</b>°</div>
 
@@ -95,6 +225,7 @@
     <button id="btn-dark" title="Neon night mode">🌙 Dark</button>
     <button id="btn-frame">Frame&nbsp;city</button>
     <button id="btn-north" title="Reset bearing to north">⌖ North</button>
+    <button id="btn-route" title="Pick start &amp; destination on the map">🧭 Route</button>
   </div>
 
   <div id="legend">
@@ -370,7 +501,7 @@
           hd: {
             type: "vector",
             tiles: [TILE_URL],
-            minzoom: 15, maxzoom: 17, // HD tiles are z15-17 (2D basemap below 15)
+            minzoom: 15, maxzoom: 18, // HD tiles are z15-18 (2D basemap below 15)
             attribution: "© OpenStreetMap contributors · osm2streets",
           },
         },
@@ -453,6 +584,7 @@
     // ---- click a road / building for a quick info popup (read-only) ----
     map.on("load", () => {
       map.on("click", (e) => {
+        if (NAV.pickMode) return; // route-pick mode owns clicks — no info popup
         const f = map.queryRenderedFeatures(e.point, {
           layers: ["buildings-3d", "lanes", "lanes-hi"],
         })[0];
@@ -505,6 +637,7 @@
     document.getElementById("map").appendChild(copyToast);
     let copyToastT = null;
     map.on("dblclick", async (e) => {
+      if (NAV.pickMode) return; // in route-pick mode, clicks place points instead
       const coord = `${e.lngLat.lat.toFixed(6)}, ${e.lngLat.lng.toFixed(6)}`; // lat, lng
       let ok = true;
       try { await navigator.clipboard.writeText(coord); }
@@ -595,6 +728,7 @@
       // light was what darkened the walls and made them look see-through)
       map.setSky(dark ? NIGHT_SKY : DAY_SKY);
       updateStars();
+      if (typeof styleRoute === "function") styleRoute(dark); // recolour route ribbon
     };
 
     btnDark.onclick = () => {
@@ -624,6 +758,676 @@
         sat.checked = !sat.checked;
         map.setLayoutProperty("satellite", "visibility", sat.checked ? "visible" : "none");
       });
+    });
+
+    // ======================================================================
+    // NAVIGATION — client-side routing on the prebaked graph (data/graph.json).
+    // Vector tiles are clipped at tile borders, so we can't route on them; this
+    // graph carries full, unclipped connectivity. Loaded lazily (first nav use
+    // or first idle) so it never competes with the initial tile load.
+    //
+    // Task 3: load + build adjacency. Later tasks add snap / A* / UI.
+    //
+    // ETA realism (Task 7 enhancement): posted maxspeed is free-flow and vastly
+    // overstates real urban travel — a "50 km/h" street in dense Hanoi averages
+    // ~30 with lights/traffic/scooters, residential ~18. So the ETA uses this
+    // EFFECTIVE-speed model (typical achieved average by class), NOT the routing
+    // speed. Routing preference still uses the free-flow speeds in graph.meta.
+    // Tune these freely — they only affect the time readout, not the chosen path.
+    // ======================================================================
+    const ETA_SPEED_KMH = {
+      motorway: 65, trunk: 45, primary: 30, secondary: 26, tertiary: 22,
+      unclassified: 20, residential: 18, living_street: 8, service: 10,
+      busway: 20, ladder: 6,
+      motorway_link: 45, trunk_link: 30, primary_link: 22,
+      secondary_link: 20, tertiary_link: 18,
+    };
+
+    // --- turn-by-turn helpers (Task 8) ---
+    // compass bearing a->b in degrees (0=N, 90=E); a,b are [lng,lat]
+    const bearingDeg = (a, b) => {
+      const R = Math.PI / 180;
+      const y = Math.sin((b[0] - a[0]) * R) * Math.cos(b[1] * R);
+      const x = Math.cos(a[1] * R) * Math.sin(b[1] * R) - Math.sin(a[1] * R) * Math.cos(b[1] * R) * Math.cos((b[0] - a[0]) * R);
+      return (Math.atan2(y, x) / R + 360) % 360;
+    };
+    const COMPASS = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"];
+    const compassDir = (brg) => COMPASS[Math.round(brg / 45) % 8];
+    // classify a signed heading change (deg, +right/-left) into a maneuver
+    const classifyTurn = (delta) => {
+      const ad = Math.abs(delta), side = delta > 0 ? "right" : "left";
+      if (ad < 20) return { turn: "straight", text: "Continue straight" };
+      if (ad < 45) return { turn: "slight-" + side, text: "Slight " + side };
+      if (ad <= 135) return { turn: side, text: "Turn " + side };
+      if (ad < 160) return { turn: "sharp-" + side, text: "Sharp " + side };
+      return { turn: "uturn", text: "Make a U-turn" };
+    };
+    // Build an ordered maneuver list from oriented legs. A maneuver is emitted at
+    // a real turn (|delta| >= threshold) or a genuine street rename; straight
+    // same-street segments collapse into the running leg. Each maneuver's `dist`
+    // is how far you travel on it before the next maneuver.
+    const buildManeuvers = (legs) => {
+      if (!legs.length) return [];
+      const TH = 22; // deg — below this counts as "straight"
+      const f = legs[0];
+      const startBrg = bearingDeg(f.ge[0], f.ge[1]);
+      const M = [{ turn: "depart", instruction: `Head ${compassDir(startBrg)}${f.name ? " on " + f.name : ""}`, name: f.name, dist: 0, spd: f.spd }];
+      let cur = M[0];
+      for (let i = 1; i < legs.length; i++) {
+        const prev = legs[i - 1], leg = legs[i], pg = prev.ge, lg = leg.ge;
+        const inB = bearingDeg(pg[pg.length - 2], pg[pg.length - 1]);
+        const outB = bearingDeg(lg[0], lg[1]);
+        const delta = ((outB - inB + 540) % 360) - 180; // [-180,180], + = right
+        cur.dist += prev.len;
+        const bigTurn = Math.abs(delta) >= TH;
+        const rename = prev.name && leg.name && prev.name !== leg.name;
+        if (bigTurn || rename) {
+          const c = classifyTurn(delta);
+          const instruction = bigTurn ? `${c.text}${leg.name ? " onto " + leg.name : ""}` : `Continue onto ${leg.name}`;
+          cur = { turn: bigTurn ? c.turn : "continue", instruction, name: leg.name, dist: 0, spd: leg.spd };
+          M.push(cur);
+        }
+      }
+      cur.dist += legs[legs.length - 1].len;
+      M.push({ turn: "arrive", instruction: "Arrive at destination", name: null, dist: 0 });
+      return M;
+    };
+
+    const NAV = {
+      graph: null,          // parsed graph.json
+      adj: null,            // Map<nodeIdx, Array<{to, e, len, cls}>>  (oneway-aware)
+      speed: null,          // per-class speed (m/s), aligned to graph.classes
+      loading: null,        // in-flight promise (so we load exactly once)
+
+      ensureGraph() {
+        if (this.graph) return Promise.resolve(this.graph);
+        if (this.loading) return this.loading;
+        this.loading = fetch("data/graph.json")
+          .then((r) => { if (!r.ok) throw new Error(`graph.json ${r.status}`); return r.json(); })
+          .then((g) => { this.build(g); return this.graph; })
+          .catch((err) => { this.loading = null; console.warn("[nav] graph load failed:", err); throw err; });
+        return this.loading;
+      },
+
+      build(g) {
+        this.graph = g;
+        // per-class ROUTING speed in m/s (km/h ÷ 3.6); fall back to residential
+        const fallback = (g.meta.speeds_kmh.residential || 30) / 3.6;
+        this.speed = g.classes.map((c) => (g.meta.speeds_kmh[c] ? g.meta.speeds_kmh[c] / 3.6 : fallback));
+        // per-class EFFECTIVE speed for the ETA (realistic urban averages, m/s),
+        // capped so it never exceeds the free-flow routing speed
+        const etaFallback = ETA_SPEED_KMH.residential / 3.6;
+        this.etaSpeed = g.classes.map((c, i) =>
+          Math.min(this.speed[i], (ETA_SPEED_KMH[c] || ETA_SPEED_KMH.residential) / 3.6) || etaFallback);
+        // build oneway-aware adjacency: node index -> outgoing edges
+        const adj = new Map();
+        const link = (from, to, e, len, cls) => {
+          let arr = adj.get(from);
+          if (!arr) { arr = []; adj.set(from, arr); }
+          arr.push({ to, e, len, cls });
+        };
+        g.edges.forEach((ed, e) => {
+          const a = ed[0], b = ed[1], len = ed[2], cls = ed[3], oneway = ed[4];
+          if (oneway === 0 || oneway === 1) link(a, b, e, len, cls); // a->b
+          if (oneway === 0 || oneway === 2) link(b, a, e, len, cls); // b->a
+        });
+        this.adj = adj;
+      },
+
+      nodeLngLat(i) { return [this.graph.nodes[i * 2], this.graph.nodes[i * 2 + 1]]; },
+      edgeName(e) { const ed = this.graph.edges[e]; return ed[5] >= 0 ? this.graph.names[ed[5]] : null; },
+
+      // full render geometry of an edge: [ [lng,lat], ... ] = node a + interior + node b
+      fullGeom(e) {
+        const ed = this.graph.edges[e], n = this.graph.nodes;
+        const pts = [[n[ed[0] * 2], n[ed[0] * 2 + 1]]];
+        for (let i = 6; i < ed.length; i += 2) pts.push([ed[i], ed[i + 1]]);
+        pts.push([n[ed[1] * 2], n[ed[1] * 2 + 1]]);
+        return pts;
+      },
+
+      // Snap a lng/lat to the nearest point on any edge. Brute-force over all
+      // segments in a local planar frame (longitude scaled by cos(lat)); ~164k
+      // segment tests, a few ms per click, so no spatial index needed yet.
+      // Returns { e, lng, lat, node, distM } — node = nearer edge endpoint.
+      snap(lng, lat) {
+        const g = this.graph, n = g.nodes, edges = g.edges;
+        const mx = Math.cos(lat * Math.PI / 180);
+        let bestD2 = Infinity, bE = -1, bLng = 0, bLat = 0;
+        for (let e = 0; e < edges.length; e++) {
+          const ed = edges[e];
+          let plng = n[ed[0] * 2], plat = n[ed[0] * 2 + 1];
+          const nInt = (ed.length - 6) / 2;
+          for (let k = 0; k <= nInt; k++) {
+            const clng = k < nInt ? ed[6 + k * 2] : n[ed[1] * 2];
+            const clat = k < nInt ? ed[6 + k * 2 + 1] : n[ed[1] * 2 + 1];
+            const ax = (plng - lng) * mx, ay = plat - lat;
+            const dx = (clng - plng) * mx, dy = clat - plat;
+            const len2 = dx * dx + dy * dy;
+            let t = len2 > 0 ? -(ax * dx + ay * dy) / len2 : 0;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            const cx = ax + dx * t, cy = ay + dy * t;
+            const d2 = cx * cx + cy * cy;
+            if (d2 < bestD2) { bestD2 = d2; bE = e; bLng = plng + (clng - plng) * t; bLat = plat + (clat - plat) * t; }
+            plng = clng; plat = clat;
+          }
+        }
+        const ed = edges[bE];
+        const da = (n[ed[0] * 2] - bLng) ** 2 + (n[ed[0] * 2 + 1] - bLat) ** 2;
+        const db = (n[ed[1] * 2] - bLng) ** 2 + (n[ed[1] * 2 + 1] - bLat) ** 2;
+        return { e: bE, lng: bLng, lat: bLat, node: da <= db ? ed[0] : ed[1],
+                 distM: Math.round(Math.sqrt(bestD2) * 111320) };
+      },
+
+      // --- A* routing (Task 5) ---
+      // Cost = travel time (len / class speed); service roads ×penalty so they're
+      // used only for access, not through-routes. Heuristic = straight-line time
+      // at the fastest class speed (admissible → shortest-time path).
+      route(sA, sB) {
+        const g = this.graph, adj = this.adj, speed = this.speed, etaSpeed = this.etaSpeed;
+        const start = sA.node, goal = sB.node;
+        if (start === goal) return null;
+        const gx = g.nodes[goal * 2], gy = g.nodes[goal * 2 + 1];
+        const maxSpeed = Math.max(...speed);
+        const serviceIdx = g.classes.indexOf("service");
+        const penalty = g.meta.service_penalty || 4;
+        const h = (nid) => {
+          const x = g.nodes[nid * 2], y = g.nodes[nid * 2 + 1];
+          const mx = Math.cos(y * Math.PI / 180);
+          const dx = (x - gx) * mx * 111320, dy = (y - gy) * 111320;
+          return Math.hypot(dx, dy) / maxSpeed;
+        };
+        const gScore = new Map([[start, 0]]);
+        const came = new Map();
+        const closed = new Set();
+        const open = new MinHeap();
+        open.push(start, h(start));
+        let found = false;
+        while (open.size()) {
+          const cur = open.pop();
+          if (cur === goal) { found = true; break; }
+          if (closed.has(cur)) continue;
+          closed.add(cur);
+          const nbrs = adj.get(cur);
+          if (!nbrs) continue;
+          const gc = gScore.get(cur);
+          for (const nb of nbrs) {
+            if (closed.has(nb.to)) continue;
+            const spd = speed[nb.cls] || maxSpeed;
+            let cost = nb.len / spd;
+            if (nb.cls === serviceIdx) cost *= penalty;
+            const ng = gc + cost;
+            if (ng < (gScore.get(nb.to) ?? Infinity)) {
+              gScore.set(nb.to, ng);
+              came.set(nb.to, { prev: cur, e: nb.e });
+              open.push(nb.to, ng + h(nb.to));
+            }
+          }
+        }
+        if (!found) return null; // unreachable
+        // reconstruct edge sequence (goal -> start), then reverse
+        const seq = [];
+        for (let n = goal; came.has(n); ) { const c = came.get(n); seq.push({ e: c.e, from: c.prev }); n = c.prev; }
+        seq.reverse();
+        // build legs with geometry oriented along travel direction (needed for
+        // both stitching and per-junction bearings)
+        const legs = seq.map((s) => {
+          const ed = g.edges[s.e];
+          const ge = this.fullGeom(s.e);
+          if (s.from === ed[1]) ge.reverse();          // edge stored a->b, we travel b->a
+          // way id + travel direction (edge[0] is the way-forward start, so travelling
+          // FROM edge[0] = "Fwd" lanes, from edge[1] = "Back") — used to match HD lanes
+          return { e: s.e, ge, len: ed[2], cls: ed[3], name: ed[5] >= 0 ? g.names[ed[5]] : null,
+                   spd: etaSpeed[ed[3]] || speed[ed[3]] || maxSpeed,
+                   w: g.wayids[s.e], dir: s.from === ed[0] ? "Fwd" : "Back" };
+        });
+        // stitch coords + totals. REAL travel time uses etaSpeed (no service
+        // penalty) — the A* gScore is penalty-inflated and over-reports the ETA.
+        const coords = []; let distM = 0, timeS = 0;
+        for (const l of legs) {
+          const g2 = coords.length ? l.ge.slice(1) : l.ge; // drop shared vertex
+          for (const p of g2) coords.push(p);
+          distM += l.len;
+          timeS += l.len / (etaSpeed[l.cls] || speed[l.cls] || maxSpeed);
+        }
+        return { nodes: seq.length + 1, coords, distM, timeS, maneuvers: buildManeuvers(legs),
+                 legWays: legs.map((l) => ({ w: String(l.w), dir: l.dir, len: l.len })) };
+      },
+
+      // --- pick state (Task 4): click to set start (A) then destination (B) ---
+      pickMode: false,
+      points: [],     // [{ marker, snap }]  index 0 = A, 1 = B
+      clearPoints() { for (const p of this.points) p.marker.remove(); this.points = []; },
+    };
+
+    // Minimal binary min-heap for A* (push item+priority, pop lowest priority).
+    class MinHeap {
+      constructor() { this.h = []; }
+      size() { return this.h.length; }
+      push(item, prio) {
+        const h = this.h; h.push({ item, prio }); let i = h.length - 1;
+        while (i > 0) { const p = (i - 1) >> 1; if (h[p].prio <= h[i].prio) break; [h[p], h[i]] = [h[i], h[p]]; i = p; }
+      }
+      pop() {
+        const h = this.h, top = h[0], last = h.pop();
+        if (h.length) { h[0] = last; let i = 0; const n = h.length;
+          for (;;) { let l = 2 * i + 1, r = l + 1, m = i;
+            if (l < n && h[l].prio < h[m].prio) m = l;
+            if (r < n && h[r].prio < h[m].prio) m = r;
+            if (m === i) break; [h[m], h[i]] = [h[i], h[m]]; i = m; } }
+        return top.item;
+      }
+    }
+    window.NAV = NAV; // expose for console poking during dev
+
+    // ---- route-pick UI (Task 4): 🧭 button toggles click-to-place A/B pins ----
+    const btnRoute = document.getElementById("btn-route");
+    const navHint = document.getElementById("nav-hint");
+    const navSummary = document.getElementById("nav-summary");
+    const navPanel = document.getElementById("nav-panel");
+    const navStepsBtn = document.getElementById("nav-steps-btn");
+
+    // human-friendly distance + duration
+    const fmtDist = (m) => m < 950 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(m < 9500 ? 1 : 0)} km`;
+    const fmtDur = (s) => {
+      if (s < 60) return "< 1 min";
+      const min = Math.round(s / 60);
+      if (min < 60) return `${min} min`;
+      const h = Math.floor(min / 60);
+      return `${h} h ${min % 60} min`;
+    };
+    const HINTS = ["Click the map to set your START", "Click to set your DESTINATION",
+                   "Click again to start over"];
+    const setHint = () => { navHint.textContent = HINTS[Math.min(NAV.points.length, 2)]; };
+
+    const makePin = (label) => {
+      const el = document.createElement("div");
+      el.className = "nav-pin " + (label === "A" ? "a" : "b");
+      el.innerHTML = `<b>${label}</b>`;
+      return el;
+    };
+
+    // Route ribbon: a wide CASING drawn first, then a bright CORE on top, so it
+    // reads as a route rather than a hairline. styleRoute() recolours both for
+    // day (blue on navy outline) vs dark (cyan core with a blurred cyan casing
+    // that fakes a neon glow). Zoom-interpolated widths keep it proportional.
+    const styleRoute = (dark) => {
+      if (!map.getLayer("nav-route-core")) return;
+      // dark = neon yellow-gold (stands out against the cyan buildings); day = blue.
+      // Kept semi-transparent so the lane highlight leads (it's a preview underlay).
+      map.setPaintProperty("nav-route-core", "line-color", dark ? "#ffe14d" : "#2f6bd6");
+      map.setPaintProperty("nav-route-core", "line-blur", dark ? 0.6 : 0);
+      map.setPaintProperty("nav-route-core", "line-opacity", dark ? 0.7 : 0.55);
+      map.setPaintProperty("nav-route-casing", "line-color", dark ? "#ffc21e" : "#0f2145");
+      map.setPaintProperty("nav-route-casing", "line-blur", dark ? 5 : 0.4);
+      map.setPaintProperty("nav-route-casing", "line-opacity", 0.4);
+    };
+    const ensureRouteLayer = () => {
+      if (map.getSource("nav-route")) return;
+      // lane-guide: highlights the real HD driving-lane polygons under the car
+      // during the 3D drive (Task 11). Sits just below buildings, above the lanes.
+      map.addSource("lane-guide", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({
+        id: "lane-guide", type: "fill", source: "lane-guide",
+        paint: { "fill-color": "#25e07d", "fill-opacity": 0.5, "fill-outline-color": "#0c7a3d" },
+      }, map.getLayer("buildings-3d") ? "buildings-3d" : undefined);
+      map.addSource("nav-route", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      const casingW = ["interpolate", ["linear"], ["zoom"], 12, 5, 16, 11, 19, 20];
+      const coreW = ["interpolate", ["linear"], ["zoom"], 12, 2, 16, 6, 19, 12];
+      map.addLayer({
+        id: "nav-route-casing", type: "line", source: "nav-route",
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": "#0f2145", "line-width": casingW, "line-opacity": 0.95, "line-blur": 0.4 },
+      });
+      map.addLayer({
+        id: "nav-route-core", type: "line", source: "nav-route",
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": "#2f6bd6", "line-width": coreW, "line-opacity": 1 },
+      });
+      styleRoute(darkOn); // match the current theme if route is created while dark
+    };
+    const clearRoute = () => { if (map.getSource("nav-route")) map.getSource("nav-route").setData({ type: "FeatureCollection", features: [] }); };
+
+    // full teardown: pins, route line, summary card, hint back to step 1
+    const resetNav = () => {
+      NAV.clearPoints(); clearRoute();
+      navSummary.classList.remove("on");
+      navPanel.classList.remove("on"); navStepsBtn.classList.remove("on");
+      setHint();
+    };
+
+    const showSummary = (r) => {
+      navSummary.innerHTML =
+        `🚗 <span class="dist">${fmtDist(r.distM)}</span>` +
+        `<span class="sep">·</span> ~${fmtDur(r.timeS)}` +
+        `<span class="clear" title="Clear route">✕</span>`;
+      navSummary.classList.add("on");
+      navSummary.querySelector(".clear").onclick = resetNav;
+    };
+
+    // --- directions panel (Task 9): turn-by-turn list + summary, toggleable ---
+    const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const TURN_GLYPH = { depart: "●", straight: "↑", continue: "↑", left: "↰", "slight-left": "↖",
+      "sharp-left": "↰", right: "↱", "slight-right": "↗", "sharp-right": "↱", uturn: "↩", arrive: "🏁" };
+    const viaRoad = (mans) => { let b = null, bd = -1; for (const m of mans) if (m.name && m.dist > bd) { bd = m.dist; b = m.name; } return b; };
+    const clockAfter = (sec) => new Date(Date.now() + sec * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+    const togglePanel = (show) => {
+      navPanel.classList.toggle("on", show);
+      navStepsBtn.classList.toggle("on", !show && NAV.points.length >= 2);
+    };
+    navStepsBtn.onclick = () => togglePanel(true);
+
+    const swapAB = () => {
+      if (NAV.points.length < 2) return;
+      NAV.points.reverse();
+      NAV.points.forEach((p, i) => {
+        p.marker.remove();
+        p.marker = new maplibregl.Marker({ element: makePin(i === 0 ? "A" : "B"), anchor: "bottom" })
+          .setLngLat([p.snap.lng, p.snap.lat]).addTo(map);
+      });
+      computeRoute();
+    };
+
+    const renderPanel = (r) => {
+      const aName = NAV.edgeName(NAV.points[0].snap.e) || "Start point";
+      const bName = NAV.edgeName(NAV.points[1].snap.e) || "Destination";
+      const via = viaRoad(r.maneuvers);
+      const steps = r.maneuvers.map((m) => {
+        const arr = m.turn === "arrive";
+        return `<div class="step${arr ? " arrive" : ""}"><div class="ic">${TURN_GLYPH[m.turn] || "↑"}</div>` +
+          `<div class="tx">${escapeHtml(m.instruction)}${m.dist ? `<div class="ds">${fmtDist(m.dist)}</div>` : ""}</div></div>`;
+      }).join("");
+      navPanel.innerHTML =
+        `<div class="np-head"><button class="np-hide" title="Hide directions">‹</button>` +
+          `<div class="np-eta">${fmtDur(r.timeS)}<small>(${fmtDist(r.distM)})</small></div>` +
+          `${via ? `<div class="np-sub">via ${escapeHtml(via)}</div>` : ""}` +
+          `<div class="np-sub">Arrive ~${clockAfter(r.timeS)}</div>` +
+          `<button class="np-go">▶ GO — drive in 3D</button></div>` +
+        `<div class="np-od">` +
+          `<div class="row"><span class="dot a"></span><span class="name">${escapeHtml(aName)}</span>` +
+            `<button class="np-swap" title="Swap start / destination">⇅</button></div>` +
+          `<div class="row"><span class="dot b"></span><span class="name">${escapeHtml(bName)}</span></div></div>` +
+        `<div class="np-steps">${steps}</div>`;
+      navPanel.querySelector(".np-hide").onclick = () => togglePanel(false);
+      navPanel.querySelector(".np-swap").onclick = swapAB;
+      navPanel.querySelector(".np-go").onclick = () => startDrive(r);
+      togglePanel(true);
+    };
+
+    // frame the whole route on a flat (2D) map, leaving room for the left panel
+    const fitRoute = (coords) => {
+      let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+      for (const [x, y] of coords) { if (x < minx) minx = x; if (y < miny) miny = y; if (x > maxx) maxx = x; if (y > maxy) maxy = y; }
+      map.fitBounds([[minx, miny], [maxx, maxy]], { padding: { top: 90, bottom: 130, left: 360, right: 60 }, pitch: 0, duration: 700, maxZoom: 16 });
+    };
+
+    // ================= 3D DRIVE MODE (Task 10) =================
+    // Follow-cam along the route: car marker + maneuver banner (next turn +
+    // distance + road) + simulated speed (from the current road's effective
+    // speed) + bottom bar (remaining dist/time + arrival clock). Play/pause/exit.
+    const driveUI = document.getElementById("drive-ui");
+    const dBanner = document.getElementById("drive-banner");
+    const dSpeedEl = document.getElementById("drive-speed").querySelector("b");
+    const dBottom = document.getElementById("drive-bottom");
+    const PLAYBACK = 4, CAR_ZOOM = 18.2, CAR_PITCH = 68, LOOK_AHEAD_M = 32, TURN_EASE = 2.5;
+
+    const metersBetween = (a, b) => {
+      const R = 6371000, rad = Math.PI / 180;
+      const dLat = (b[1] - a[1]) * rad, dLng = (b[0] - a[0]) * rad;
+      const s = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * rad) * Math.cos(b[1] * rad) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(s));
+    };
+    const moveAlong = ([lng, lat], headingDeg, distM) => {
+      const rad = Math.PI / 180;
+      return [lng + (distM * Math.sin(headingDeg * rad)) / (111320 * Math.cos(lat * rad)),
+              lat + (distM * Math.cos(headingDeg * rad)) / 111320];
+    };
+    const carEl = () => {
+      const d = document.createElement("div");
+      d.className = "drive-car";
+      const img = document.createElement("img");
+      // trimmed top-view car (858x1633); keep aspect ratio so it isn't squashed
+      img.src = "image/car.png"; img.width = 30; img.height = 57; img.alt = "";
+      // fallback to a simple SVG car if car.png isn't present
+      img.onerror = () => {
+        d.innerHTML = `<svg width="40" height="40" viewBox="0 0 36 36">
+          <rect x="11" y="5" width="14" height="26" rx="5" fill="#2f6bd6" stroke="#fff" stroke-width="1.6"/>
+          <rect x="13.5" y="8" width="9" height="6" rx="2" fill="#cfe0f7"/>
+          <rect x="13.5" y="21" width="9" height="5" rx="2" fill="#1b4a8f"/></svg>`;
+      };
+      d.appendChild(img);
+      return d;
+    };
+    const hideForDrive = (on) => {
+      for (const id of ["controls", "legend", "readout", "search", "nav-summary"]) {
+        const el = document.getElementById(id); if (el) el.style.display = on ? "none" : "";
+      }
+    };
+
+    const DRIVE = { active: false, raf: 0, paused: false, d: 0, total: 0, timeS: 0, car: null, last: 0, lastGuide: 0, routeCoords: null };
+
+    // Task 11 (route-hug): the tiles dropped the lane->way link, so we can't match
+    // lanes to the route by id. Instead we keep only Driving lanes that (a) hug the
+    // route centerline and (b) run PARALLEL to it — which drops cross-streets and
+    // neighbouring roads, leaving the road you're actually driving.
+    const ringOf = (g) => g.type === "Polygon" ? g.coordinates[0] : g.type === "MultiPolygon" ? g.coordinates[0][0] : null;
+    const ringCentroid = (r) => { let x = 0, y = 0; for (const p of r) { x += p[0]; y += p[1]; } return [x / r.length, y / r.length]; };
+    const longAxisBearing = (r) => { // bearing of the polygon's longest chord ~ road direction
+      let bi = 0, bj = 1, bd = -1;
+      for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) {
+        const dx = r[j][0] - r[i][0], dy = r[j][1] - r[i][1], d = dx * dx + dy * dy;
+        if (d > bd) { bd = d; bi = i; bj = j; }
+      }
+      return bearingDeg(r[bi], r[bj]);
+    };
+    const angDiff180 = (a, b) => { const d = Math.abs(a - b) % 180; return d > 90 ? 180 - d : d; };
+    // nearest distance (m) to the polyline + that segment's heading + SIGNED side
+    // (meters; negative = right of travel, positive = left). Right-hand traffic →
+    // our lanes are on the right, oncoming is left.
+    const nearestOnRoute = (lng, lat, coords) => {
+      const mx = Math.cos(lat * Math.PI / 180);
+      let best = Infinity, bh = 0, bsigned = 0;
+      for (let i = 1; i < coords.length; i++) {
+        const a = coords[i - 1], b = coords[i];
+        const ax = (a[0] - lng) * mx, ay = a[1] - lat, bx = (b[0] - lng) * mx, by = b[1] - lat;
+        const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+        let t = len2 > 0 ? -(ax * dx + ay * dy) / len2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const cx = ax + dx * t, cy = ay + dy * t, d2 = cx * cx + cy * cy;
+        if (d2 < best) {
+          best = d2; bh = bearingDeg(a, b);
+          const dl = Math.hypot(dx, dy) || 1e-9;
+          bsigned = ((dy * ax - dx * ay) / dl) * 111320; // signed lateral offset
+        }
+      }
+      return { distM: Math.sqrt(best) * 111320, heading: bh, signed: bsigned };
+    };
+
+    const clearLaneGuide = () => { const s = map.getSource("lane-guide"); if (s) s.setData({ type: "FeatureCollection", features: [] }); };
+    // `winWays` = [{w, dir}] for the current way + one ahead. A lane is highlighted
+    // iff its osm_way_ids contains one of those ways AND its direction matches our
+    // travel — exact, so no cross-street / oncoming / parallel-road false positives.
+    const updateLaneGuide = (pos, winWays) => {
+      const src = map.getSource("lane-guide");
+      if (!src || !winWays || !winWays.length) return;
+      const p = map.project(pos);
+      const box = [[p.x - 150, p.y - 240], [p.x + 150, p.y + 90]]; // generous; way-id match keeps it correct
+      let feats = [];
+      try { feats = map.queryRenderedFeatures(box, { layers: ["lanes", "lanes-hi"] }); } catch (_) {}
+      const seen = new Set(), out = [];
+      for (const f of feats) {
+        const pr = f.properties || {};
+        if (pr.type !== "Driving") continue;
+        const ids = String(pr.osm_way_ids).match(/\d+/g);
+        if (!ids) continue;
+        if (!winWays.some((ww) => ww.dir === pr.direction && ids.includes(ww.w))) continue;
+        const ring = ringOf(f.geometry);
+        const key = ring ? `${ring[0][0].toFixed(5)},${ring[0][1].toFixed(5)}` : String(out.length);
+        if (seen.has(key)) continue; seen.add(key);
+        out.push({ type: "Feature", geometry: f.geometry, properties: {} });
+      }
+      src.setData({ type: "FeatureCollection", features: out });
+    };
+
+    const stopDrive = () => {
+      DRIVE.active = false;
+      if (DRIVE.raf) cancelAnimationFrame(DRIVE.raf);
+      if (DRIVE.car) { DRIVE.car.remove(); DRIVE.car = null; }
+      clearLaneGuide();
+      driveUI.classList.remove("on");
+      hideForDrive(false);
+      togglePanel(true);
+      if (NAV.lastRoute) { navSummary.classList.add("on"); fitRoute(NAV.lastRoute.coords); }
+    };
+
+    const startDrive = (r) => {
+      if (!r || !r.coords || r.coords.length < 2) return;
+      const pts = r.coords, cum = [0];
+      for (let i = 1; i < pts.length; i++) cum[i] = cum[i - 1] + metersBetween(pts[i - 1], pts[i]);
+      const total = cum[cum.length - 1] || 1;
+      const mans = r.maneuvers, turnAt = []; let acc = 0;
+      for (let i = 0; i < mans.length; i++) { turnAt[i] = acc; acc += mans[i].dist || 0; }
+      // way-runs: merge consecutive legs sharing (way, dir) into distance ranges,
+      // so the lane highlight can cover the current way + exactly one ahead
+      const runs = []; let racc = 0;
+      for (const lw of (r.legWays || [])) {
+        const last = runs[runs.length - 1];
+        if (last && last.w === lw.w && last.dir === lw.dir) last.end += lw.len;
+        else runs.push({ w: lw.w, dir: lw.dir, start: racc, end: racc + lw.len });
+        racc += lw.len;
+      }
+      let segIdx = 0, manPtr = 1, runPtr = 0;
+      const curRun = (d) => { while (runPtr < runs.length - 1 && d >= runs[runPtr].end) runPtr++; return runPtr; };
+      const sampleAt = (d) => {
+        while (segIdx < pts.length - 2 && cum[segIdx + 1] < d) segIdx++;
+        const a = pts[segIdx], b = pts[segIdx + 1], segLen = (cum[segIdx + 1] - cum[segIdx]) || 1;
+        const t = Math.max(0, Math.min(1, (d - cum[segIdx]) / segLen));
+        return { pos: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], heading: bearingDeg(a, b) };
+      };
+      const upcoming = (d) => { while (manPtr < mans.length - 1 && d >= turnAt[manPtr]) manPtr++; return manPtr; };
+      const updateHud = (mi) => {
+        const man = mans[mi];
+        dBanner.querySelector(".b-ic").textContent = TURN_GLYPH[man.turn] || "↑";
+        dBanner.querySelector(".b-dist").textContent = fmtDist(Math.max(0, turnAt[mi] - DRIVE.d));
+        dBanner.querySelector(".b-road").textContent = man.name || (man.turn === "arrive" ? "Arrive at destination" : "");
+        dSpeedEl.textContent = Math.round((mans[Math.max(0, mi - 1)].spd || 8) * 3.6);
+        const remainT = DRIVE.timeS * (1 - DRIVE.d / total);
+        dBottom.querySelector(".remain").textContent = fmtDur(remainT);
+        dBottom.querySelector(".dist").textContent = fmtDist(total - DRIVE.d);
+        dBottom.querySelector(".eta").textContent = "Arrive ~" + clockAfter(remainT);
+      };
+      const tick = (ts) => {
+        if (!DRIVE.active) return;
+        if (!DRIVE.last) DRIVE.last = ts;
+        let dt = (ts - DRIVE.last) / 1000; DRIVE.last = ts; if (dt > 0.1) dt = 0.1;
+        const mi = upcoming(DRIVE.d);
+        if (!DRIVE.paused) {
+          const spd = mans[Math.max(0, mi - 1)].spd || 8;
+          DRIVE.d += spd * PLAYBACK * dt;
+          if (DRIVE.d > total) DRIVE.d = total;
+        }
+        const s = sampleAt(DRIVE.d);
+        DRIVE.car.setLngLat(s.pos);
+        // ease the camera bearing toward the heading so turns glide instead of snapping
+        const diff = ((s.heading - DRIVE.camBearing + 540) % 360) - 180;
+        DRIVE.camBearing = (DRIVE.camBearing + diff * Math.min(1, dt * TURN_EASE) + 360) % 360;
+        map.jumpTo({ center: moveAlong(s.pos, DRIVE.camBearing, LOOK_AHEAD_M), bearing: DRIVE.camBearing, pitch: CAR_PITCH, zoom: CAR_ZOOM });
+        if (ts - DRIVE.lastGuide > 180) { // throttle lane highlight; window = current way + one ahead
+          DRIVE.lastGuide = ts;
+          const rp = curRun(DRIVE.d);
+          const winWays = [runs[rp], runs[rp + 1]].filter(Boolean).map((r) => ({ w: r.w, dir: r.dir }));
+          updateLaneGuide(s.pos, winWays);
+        }
+        updateHud(mi);
+        if (DRIVE.d >= total && !DRIVE.paused) { DRIVE.paused = true; dBottom.querySelector(".pause").textContent = "▶"; }
+        DRIVE.raf = requestAnimationFrame(tick);
+      };
+
+      const s0 = sampleAt(0);
+      Object.assign(DRIVE, { active: true, paused: false, d: 0, total, timeS: r.timeS, last: 0, camBearing: s0.heading, routeCoords: pts });
+      hideForDrive(true);
+      togglePanel(false); navStepsBtn.classList.remove("on"); navHint.classList.remove("on");
+      driveUI.classList.add("on");
+      dBottom.querySelector(".pause").textContent = "⏸";
+      DRIVE.car = new maplibregl.Marker({ element: carEl(), anchor: "center" }).setLngLat(s0.pos).addTo(map);
+      map.jumpTo({ center: moveAlong(s0.pos, s0.heading, LOOK_AHEAD_M), bearing: s0.heading, pitch: CAR_PITCH, zoom: CAR_ZOOM });
+      DRIVE.raf = requestAnimationFrame(tick);
+    };
+
+    dBottom.querySelector(".pause").onclick = () => {
+      if (!DRIVE.active) return;
+      DRIVE.paused = !DRIVE.paused; DRIVE.last = 0;
+      dBottom.querySelector(".pause").textContent = DRIVE.paused ? "▶" : "⏸";
+    };
+    dBottom.querySelector(".exit").onclick = stopDrive;
+
+    const computeRoute = () => {
+      const [a, b] = NAV.points;
+      const t0 = performance.now();
+      const r = NAV.route(a.snap, b.snap);
+      const ms = (performance.now() - t0).toFixed(1);
+      if (!r) { navHint.textContent = "⚠ No route found between those points"; navSummary.classList.remove("on"); togglePanel(false); console.warn("[nav] no route"); return; }
+      // connect the mid-edge snapped points to the routed node path
+      const coords = [[a.snap.lng, a.snap.lat], ...r.coords, [b.snap.lng, b.snap.lat]];
+      ensureRouteLayer();
+      map.getSource("nav-route").setData({ type: "Feature", geometry: { type: "LineString", coordinates: coords } });
+      showSummary(r);
+      renderPanel(r);
+      fitRoute(coords);
+      navHint.textContent = "Click again to start over";
+      NAV.lastRoute = r;
+      console.log(`[nav] route: ${r.nodes} nodes, ${fmtDist(r.distM)}, ${fmtDur(r.timeS)}, A* in ${ms}ms`);
+      console.log(`[nav] ${r.maneuvers.length} maneuvers:`);
+      r.maneuvers.forEach((m, i) => console.log(`   ${i + 1}. ${m.instruction}${m.dist ? " — " + fmtDist(m.dist) : ""}`));
+    };
+
+    const placePoint = (lngLat) => {
+      const s = NAV.snap(lngLat.lng, lngLat.lat);
+      const label = NAV.points.length === 0 ? "A" : "B";
+      const marker = new maplibregl.Marker({ element: makePin(label), anchor: "bottom" })
+        .setLngLat([s.lng, s.lat]).addTo(map);
+      NAV.points.push({ marker, snap: s });
+      console.log(`[nav] ${label} snapped ${s.distM}m to edge #${s.e}, node #${s.node}`);
+      if (NAV.points.length === 2) computeRoute(); else setHint();
+    };
+
+    let lastPick = 0;
+    map.on("click", (e) => {
+      if (!NAV.pickMode || !NAV.graph) return;
+      const now = performance.now();
+      if (now - lastPick < 350) return; // swallow the paired click of a dbl-click
+      lastPick = now;
+      if (NAV.points.length >= 2) { resetNav(); return; } // 3rd click resets
+      placePoint(e.lngLat);
+    });
+
+    btnRoute.onclick = () => {
+      NAV.pickMode = !NAV.pickMode;
+      btnRoute.classList.toggle("on", NAV.pickMode);
+      navHint.classList.toggle("on", NAV.pickMode);
+      map.getCanvas().style.cursor = NAV.pickMode ? "crosshair" : "";
+      if (NAV.pickMode) { NAV.ensureGraph().catch(() => {}); setHint(); }
+      else { resetNav(); }
+    };
+
+    // one-time verification (Task 3) — load after the map goes idle so it can't
+    // slow the first paint, then log a self-check. Remove once the UI drives loads.
+    map.once("idle", () => {
+      const t0 = performance.now();
+      NAV.ensureGraph().then((g) => {
+        const ms = (performance.now() - t0).toFixed(0);
+        const dirEdges = [...NAV.adj.values()].reduce((s, a) => s + a.length, 0);
+        // pick a node with the most neighbours as a sample lookup
+        let sample = null, best = -1;
+        for (const [n, a] of NAV.adj) if (a.length > best) { best = a.length; sample = n; }
+        console.log(`[nav] graph loaded in ${ms}ms`);
+        console.log(`[nav]   nodes=${g.meta.nodes} (adj has ${NAV.adj.size} with out-edges)`);
+        console.log(`[nav]   edges=${g.meta.edges} -> ${dirEdges} directed adjacency entries`);
+        console.log(`[nav]   classes=${g.classes.length}, names=${g.names.length}`);
+        const [lng, lat] = NAV.nodeLngLat(sample);
+        console.log(`[nav]   busiest node #${sample} @ ${lat.toFixed(5)},${lng.toFixed(5)} has ${best} neighbours:`,
+          NAV.adj.get(sample).map((x) => `${g.classes[x.cls]}(${x.len}m)`));
+      }).catch(() => {});
     });
   </script>
 </body>

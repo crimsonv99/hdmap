@@ -16,3 +16,8 @@ data/meta.json
 
 # The city map is served from ./tiles (uncompressed MVT) + data/hanoi-meta.json,
 # both of which ARE committed so the site runs on GitHub Pages with no server.
+
+# Car marker: only the trimmed image/car.png is served. Keep the big source
+# (2000x2000 original + PSD) out of the repo.
+image/10382282.png
+image/*.psd
