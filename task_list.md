@@ -273,12 +273,16 @@ the data-gated bits we can't do truthfully.
   (dead code to trim in Task 12).
 - **Files:** `index.html`.
 
-### Task 12 — Re-route, search-to-route, and polish
-- **Why:** Rough edges: routing from the Fly-to search box, clearing state, edge cases.
-- **How:** Let the existing lat/lng search set a destination; add "route from here";
-  handle disconnected components and out-of-extent clicks with clear messaging.
-- **Expected result:** Smooth end-to-end flow from search → route → drive, with
-  sensible messages when routing isn't possible.
+### Task 12 — Re-route, search-to-route, and polish  ✅ DONE
+- **Result:** (1) **Search-to-route** — when 🧭 pick mode is on, typing a `lat,lng`
+  in the Fly-to box drops the next A/B point (snapped) instead of just flying.
+  (2) **Out-of-extent guard** — clicks/searches >150 m (`SNAP_MAX_M`) from any road
+  show "No road near there — pick a point on the mapped area" instead of snapping to
+  a far edge. (3) **Disconnected pairs** already handled ("⚠ No route found").
+  (4) **Polish** — crosshair no longer flips to a pointer over buildings during pick
+  mode; removed the dead geometric helpers (`ringCentroid`/`longAxisBearing`/
+  `angDiff180`/`nearestOnRoute`/`routeCoords`) left over from the superseded lane
+  approach. Parses clean, no dangling refs.
 - **Files:** `index.html`.
 
 ---

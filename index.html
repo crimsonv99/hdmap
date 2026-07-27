@@ -604,8 +604,8 @@
         new maplibregl.Popup({ closeButton: false })
           .setLngLat(e.lngLat).setHTML(html).addTo(map);
       });
-      map.on("mouseenter", "buildings-3d", () => (map.getCanvas().style.cursor = "pointer"));
-      map.on("mouseleave", "buildings-3d", () => (map.getCanvas().style.cursor = ""));
+      map.on("mouseenter", "buildings-3d", () => { if (!NAV.pickMode) map.getCanvas().style.cursor = "pointer"; });
+      map.on("mouseleave", "buildings-3d", () => { if (!NAV.pickMode) map.getCanvas().style.cursor = ""; });
     });
 
     // ---- UI wiring ----
@@ -617,6 +617,13 @@
       const lat = +m[1], lng = +m[2];
       if (Math.abs(lat) > 90 || Math.abs(lng) > 180) { hint.textContent = "range"; return; }
       hint.textContent = "";
+      // in route-pick mode, a typed coordinate drops the next A/B point precisely
+      if (NAV.pickMode && NAV.graph) {
+        map.flyTo({ center: [lng, lat], zoom: 17, speed: 1.4 });
+        placePoint({ lng, lat });
+        document.getElementById("goto").value = "";
+        return;
+      }
       map.flyTo({ center: [lng, lat], zoom: 18, pitch: 55, speed: 1.4 });
       new maplibregl.Marker({ color: "#2f6bd6" }).setLngLat([lng, lat]).addTo(map);
     };
@@ -1205,43 +1212,10 @@
       }
     };
 
-    const DRIVE = { active: false, raf: 0, paused: false, d: 0, total: 0, timeS: 0, car: null, last: 0, lastGuide: 0, routeCoords: null };
+    const DRIVE = { active: false, raf: 0, paused: false, d: 0, total: 0, timeS: 0, car: null, last: 0, lastGuide: 0 };
 
-    // Task 11 (route-hug): the tiles dropped the lane->way link, so we can't match
-    // lanes to the route by id. Instead we keep only Driving lanes that (a) hug the
-    // route centerline and (b) run PARALLEL to it — which drops cross-streets and
-    // neighbouring roads, leaving the road you're actually driving.
+    // exterior ring of a lane polygon (used to dedupe queried lane features)
     const ringOf = (g) => g.type === "Polygon" ? g.coordinates[0] : g.type === "MultiPolygon" ? g.coordinates[0][0] : null;
-    const ringCentroid = (r) => { let x = 0, y = 0; for (const p of r) { x += p[0]; y += p[1]; } return [x / r.length, y / r.length]; };
-    const longAxisBearing = (r) => { // bearing of the polygon's longest chord ~ road direction
-      let bi = 0, bj = 1, bd = -1;
-      for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) {
-        const dx = r[j][0] - r[i][0], dy = r[j][1] - r[i][1], d = dx * dx + dy * dy;
-        if (d > bd) { bd = d; bi = i; bj = j; }
-      }
-      return bearingDeg(r[bi], r[bj]);
-    };
-    const angDiff180 = (a, b) => { const d = Math.abs(a - b) % 180; return d > 90 ? 180 - d : d; };
-    // nearest distance (m) to the polyline + that segment's heading + SIGNED side
-    // (meters; negative = right of travel, positive = left). Right-hand traffic →
-    // our lanes are on the right, oncoming is left.
-    const nearestOnRoute = (lng, lat, coords) => {
-      const mx = Math.cos(lat * Math.PI / 180);
-      let best = Infinity, bh = 0, bsigned = 0;
-      for (let i = 1; i < coords.length; i++) {
-        const a = coords[i - 1], b = coords[i];
-        const ax = (a[0] - lng) * mx, ay = a[1] - lat, bx = (b[0] - lng) * mx, by = b[1] - lat;
-        const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
-        let t = len2 > 0 ? -(ax * dx + ay * dy) / len2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
-        const cx = ax + dx * t, cy = ay + dy * t, d2 = cx * cx + cy * cy;
-        if (d2 < best) {
-          best = d2; bh = bearingDeg(a, b);
-          const dl = Math.hypot(dx, dy) || 1e-9;
-          bsigned = ((dy * ax - dx * ay) / dl) * 111320; // signed lateral offset
-        }
-      }
-      return { distM: Math.sqrt(best) * 111320, heading: bh, signed: bsigned };
-    };
 
     const clearLaneGuide = () => { const s = map.getSource("lane-guide"); if (s) s.setData({ type: "FeatureCollection", features: [] }); };
     // `winWays` = [{w, dir}] for the current way + one ahead. A lane is highlighted
@@ -1344,7 +1318,7 @@
       };
 
       const s0 = sampleAt(0);
-      Object.assign(DRIVE, { active: true, paused: false, d: 0, total, timeS: r.timeS, last: 0, camBearing: s0.heading, routeCoords: pts });
+      Object.assign(DRIVE, { active: true, paused: false, d: 0, total, timeS: r.timeS, last: 0, camBearing: s0.heading });
       hideForDrive(true);
       togglePanel(false); navStepsBtn.classList.remove("on"); navHint.classList.remove("on");
       driveUI.classList.add("on");
@@ -1381,8 +1355,14 @@
       r.maneuvers.forEach((m, i) => console.log(`   ${i + 1}. ${m.instruction}${m.dist ? " — " + fmtDist(m.dist) : ""}`));
     };
 
+    const SNAP_MAX_M = 150; // farther than this from any road = off the mapped network
     const placePoint = (lngLat) => {
+      if (NAV.points.length >= 2) { resetNav(); return; } // guard: already have A+B
       const s = NAV.snap(lngLat.lng, lngLat.lat);
+      if (s.distM > SNAP_MAX_M) {
+        navHint.textContent = "⚠ No road near there — pick a point on the mapped area";
+        return;
+      }
       const label = NAV.points.length === 0 ? "A" : "B";
       const marker = new maplibregl.Marker({ element: makePin(label), anchor: "bottom" })
         .setLngLat([s.lng, s.lat]).addTo(map);
