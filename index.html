@@ -316,7 +316,7 @@
       ["all", ["==", ["get", "type"], "Driving"], ["==", ["get", "svc"], "private"]], priv,
       base,
     ];
-    const laneColor = svcTint(laneTypeColor, "#7a6b58", "#cfd3d9");
+    const laneColor = svcTint(laneTypeColor, "#c2a06a", "#8d939e");
     const markColor = [
       "match", ["get", "type"],
       "center line", "#e8c84a", "vehicle stop line", "#ffffff",
@@ -355,29 +355,17 @@
         layout: { "fill-sort-key": sortKey },
         paint: { "fill-color": laneColor, "fill-opacity": 1 },
       },
+      // private service = light-grey FILL only (no outline). Alleys (service=alley)
+      // get a bold solid LIGHT-BROWN stroke so the narrow ngõ/hẻm read as thick
+      // brown paths instead of thin dark ribbons.
       {
-        // alley signal: a dashed light rim traced along the alley driving surface
-        // (polygon outline) — reads as "narrow, not a through car road" at a glance.
         id: "lanes-alley" + sfx, type: "line", source: "lanes",
         filter: ["all", flt, ["==", ["get", "svc"], "alley"], ["==", ["get", "type"], "Driving"]],
         layout: { "line-sort-key": sortKey, "line-join": "round", "line-cap": "round" },
         paint: {
-          "line-color": "#d8c9a8",
-          "line-width": ["interpolate", ["linear"], LYR, 0, 0.8, 1, 1.4],
-          "line-dasharray": [2, 2],
-          "line-opacity": 0.9,
-        },
-      },
-      {
-        // private service road: a bold white border around the light-grey surface
-        // so it stands out clearly from public roads.
-        id: "lanes-service" + sfx, type: "line", source: "lanes",
-        filter: ["all", flt, ["==", ["get", "svc"], "private"], ["==", ["get", "type"], "Driving"]],
-        layout: { "line-sort-key": sortKey, "line-join": "round", "line-cap": "round" },
-        paint: {
-          "line-color": "#ffffff",
-          "line-width": ["interpolate", ["linear"], LYR, 0, 1.2, 1, 2.2],
-          "line-opacity": 0.95,
+          "line-color": "#c2a06a",
+          "line-width": ["interpolate", ["linear"], LYR, 0, 3, 1, 4.5],
+          "line-opacity": 1,
         },
       },
       {
@@ -787,9 +775,8 @@
       // ground (else the ways vanish), so a mid slate-blue surface + a faint cyan
       // casing rim that ties them into the neon theme instead of receding.
       // service roads stay distinct in dark too (warm tones over the slate base)
-      const laneColorDark = svcTint("#333d4d", "#5a4f3a", "#cfd3d9");
+      const laneColorDark = svcTint("#333d4d", "#5a4f3a", "#8d939e");
       for (const id of ["lanes", "lanes-hi"]) set(id, "fill-color", dark ? laneColorDark : laneColor);
-      for (const id of ["lanes-alley", "lanes-alley-hi"]) set(id, "line-color", dark ? "#8a7d55" : "#d8c9a8");
       // private service keeps its bold white border in both themes (high contrast)
       set("intersections", "fill-color", dark ? "#333d4d" : "#5b6270");
       for (const id of ["lanes-edge", "lanes-edge-hi", "inter-edge"])
@@ -827,7 +814,7 @@
       });
     };
     map.on("load", () => {
-      toggle("t-roads", "lanes", "lanes-edge", "lanes-hi", "lanes-edge-hi", "lanes-alley", "lanes-alley-hi", "lanes-service", "lanes-service-hi", "intersections", "inter-edge");
+      toggle("t-roads", "lanes", "lanes-edge", "lanes-hi", "lanes-edge-hi", "lanes-alley", "lanes-alley-hi", "intersections", "inter-edge");
       toggle("t-mark", "markings", "markings-hi");
       toggle("t-turn", "turn-left", "turn-right", "turn-arrows", "turn-left-hi", "turn-right-hi", "turn-arrows-hi");
       toggle("t-bldg", "buildings-3d");
