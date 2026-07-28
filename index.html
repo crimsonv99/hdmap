@@ -400,8 +400,15 @@
       // the basemap owns all of that now, so nothing renders as blank beige ground.
       // Stays visible at every zoom (source goes to z20, overzooms above that).
       { id: "basemap-2d", type: "raster", source: "basemap" },
-      // dark counterpart — hidden until dark mode / satellite swaps it out
-      { id: "basemap-2d-dark", type: "raster", source: "basemapDark", layout: { visibility: "none" } },
+      // dark counterpart — hidden until dark mode / satellite swaps it out. CARTO
+      // Dark Matter has near-black land, which vanished against the neon-night
+      // ground; lift the black floor so streets/land read as dark grey and the
+      // basemap is actually visible (incl. during 3D drive).
+      {
+        id: "basemap-2d-dark", type: "raster", source: "basemapDark",
+        layout: { visibility: "none" },
+        paint: { "raster-brightness-min": 0.16, "raster-contrast": 0.05 },
+      },
       // intersection casing then fill (fuse road + junction into one surface)
       {
         id: "inter-edge", type: "line", source: "intersections",
@@ -636,6 +643,7 @@
     });
 
     // ---- UI wiring ----
+    let gotoMarker = null; // the single "fly to" pin — replaced (not stacked) each search
     const goTo = () => {
       const hint = document.getElementById("goto-hint");
       const raw = document.getElementById("goto").value.trim();
@@ -652,7 +660,8 @@
         return;
       }
       map.flyTo({ center: [lng, lat], zoom: 18, pitch: 55, speed: 1.4 });
-      new maplibregl.Marker({ color: "#2f6bd6" }).setLngLat([lng, lat]).addTo(map);
+      if (gotoMarker) gotoMarker.remove(); // drop the previous pin first
+      gotoMarker = new maplibregl.Marker({ color: "#2f6bd6" }).setLngLat([lng, lat]).addTo(map);
     };
     document.getElementById("goto-btn").onclick = goTo;
     document.getElementById("goto").addEventListener("keydown", (e) => e.key === "Enter" && goTo());
