@@ -82,6 +82,39 @@ console.log(`Clipping city bbox from ${pbf} …`);
 execFileSync("osmium", ["extract", "-b", `${W},${S},${E},${N}`,
   "--strategy", "complete_ways", "--overwrite", "-o", cityPbf, pbf], { stdio: "inherit" });
 
+// ---- 1a'. classify service roads for the viewer's alley-vs-private display ----
+// The viewer paints `highway=service` roads distinctly: an ALLEY (service=alley,
+// the narrow Hanoi ngõ/hẻm — no 4-wheeler) vs a plain PRIVATE service road.
+// osm2streets lanes don't carry the OSM `service` tag, only `osm_way_ids`, so we
+// build a way_id -> kind map here (one cheap osmium pass) and stamp each lane
+// feature below. This is DISPLAY only — routing is unaffected.
+const svcOsm = join(buildDir, "service.tmp.osm");
+execFileSync("osmium", ["tags-filter", cityPbf, "w/highway=service",
+  "-o", svcOsm, "--overwrite"], { stdio: "inherit" });
+const svcKind = new Map(); // OSM way id (number) -> "alley" | "private"
+{
+  const xml = readFileSync(svcOsm, "utf8");
+  const attr = (s, k) => { const m = s.match(new RegExp(`${k}="([^"]*)"`)); return m ? m[1] : null; };
+  let id = null, alley = false;
+  for (const raw of xml.split("\n")) {
+    const s = raw.trimStart();
+    if (s.startsWith("<way")) { id = attr(s, "id"); alley = false; }
+    else if (s.startsWith("<tag ") && id) { if (attr(s, "k") === "service" && attr(s, "v") === "alley") alley = true; }
+    if (id && (s.startsWith("</way") || (s.startsWith("<way") && s.endsWith("/>")))) {
+      svcKind.set(Number(id), alley ? "alley" : "private"); id = null;
+    }
+  }
+}
+rmSync(svcOsm, { force: true });
+console.log(`service roads classified: ${svcKind.size} (alley + private)`);
+
+// stamp `svc` onto a lane feature if its way is a service road (first match wins)
+const stampSvc = (feat) => {
+  const ids = feat.properties?.osm_way_ids;
+  if (!Array.isArray(ids)) return;
+  for (const w of ids) { const k = svcKind.get(Number(w)); if (k) { feat.properties.svc = k; break; } }
+};
+
 // ---- 1b. cut all tiles in ONE osmium pass (config-based multi-extract) ----
 // complete_ways so boundary roads arrive whole; .osm extension → XML out.
 const cfg = {
@@ -128,7 +161,10 @@ for (const t of tiles) {
     const { lanes, markings, intersections, turnArrows, buildings } = osmToLayers(xml);
     const src = { lanes, markings, intersections, turn_arrows: turnArrows, buildings };
     for (const l of LAYERS)
-      for (const f of src[l].features) totals[l] += write(out[l], f, t);
+      for (const f of src[l].features) {
+        if (l === "lanes") stampSvc(f); // alley/private display flag
+        totals[l] += write(out[l], f, t);
+      }
   } catch (e) {
     failed++;
     console.warn(`  ! ${t.name}: ${String(e).slice(0, 120)}`);

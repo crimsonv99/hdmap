@@ -5,178 +5,206 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
   <title>3D City Map — osm2streets + MapLibre</title>
   <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    html, body { margin: 0; height: 100%; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
     #map { position: absolute; inset: 0; }
 
-    /* --- floating search bar (Google-Maps style) --- */
+    /* Glassmorphism helpers */
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-panel-dark {
+      background: rgba(18, 22, 30, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+
+    /* --- floating search bar --- */
     #search {
-      position: absolute; top: 12px; left: 12px; z-index: 5;
-      display: flex; gap: 6px; align-items: center;
-      background: #fff; border-radius: 24px; padding: 6px 8px 6px 16px;
-      box-shadow: 0 2px 10px rgba(0,0,0,.22); width: min(360px, calc(100vw - 24px));
+      position: absolute; top: 16px; left: 16px; z-index: 5;
+      display: flex; gap: 8px; align-items: center;
+      border-radius: 24px; padding: 6px 8px 6px 20px;
+      width: min(360px, calc(100vw - 32px));
     }
-    #search input {
-      border: 0; outline: 0; flex: 1; font-size: 14px; background: transparent;
-    }
+    #search:hover { box-shadow: 0 12px 36px rgba(0, 0, 0, 0.15); transform: translateY(-1px); }
+    #search input { border: 0; outline: 0; flex: 1; font-size: 15px; font-weight: 500; background: transparent; color: #1a2430; }
     #search button {
-      border: 0; background: #2f6bd6; color: #fff; width: 30px; height: 30px;
-      border-radius: 50%; cursor: pointer; font-size: 15px; line-height: 1;
+      border: 0; background: linear-gradient(135deg, #2f6bd6, #4f85e5); color: #fff; width: 34px; height: 34px;
+      border-radius: 50%; cursor: pointer; font-size: 16px; line-height: 1;
+      transition: transform 0.2s, box-shadow 0.2s;
     }
-    #search .hint { color: #9aa0aa; font-size: 11px; }
+    #search button:hover { transform: scale(1.05); box-shadow: 0 4px 12px rgba(47, 107, 214, 0.4); }
+    #search .hint { color: #8a94a3; font-size: 12px; font-weight: 500; }
 
     /* --- bottom-right view controls --- */
     #controls {
-      position: absolute; bottom: 26px; right: 12px; z-index: 5;
-      display: flex; flex-direction: column; gap: 8px; align-items: stretch;
+      position: absolute; bottom: 32px; right: 16px; z-index: 5;
+      display: flex; flex-direction: column; gap: 10px; align-items: stretch;
     }
     #controls button {
-      background: #fff; border: 0; border-radius: 8px; padding: 9px 12px;
-      box-shadow: 0 1px 6px rgba(0,0,0,.22); cursor: pointer; font-size: 13px;
-      color: #23303f; font-weight: 600; white-space: nowrap;
+      border: 0; border-radius: 12px; padding: 10px 14px;
+      cursor: pointer; font-size: 14px; color: #23303f; font-weight: 600; white-space: nowrap;
     }
-    #controls button.on { background: #2f6bd6; color: #fff; }
+    #controls button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.15); }
+    #controls button.on { background: linear-gradient(135deg, #2f6bd6, #4f85e5); color: #fff; border: none; }
 
     /* --- navigation: pick-mode hint pill + snapped-point markers --- */
     #nav-hint {
-      position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
-      z-index: 6; display: none; background: rgba(20,23,29,.92); color: #eef1f6;
-      padding: 7px 15px; border-radius: 20px; font-size: 13px; font-weight: 600;
-      box-shadow: 0 1px 8px rgba(0,0,0,.32); white-space: nowrap;
+      position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+      z-index: 6; display: none; color: #eef1f6;
+      padding: 10px 20px; border-radius: 24px; font-size: 14px; font-weight: 600;
+      white-space: nowrap;
     }
-    #nav-hint.on { display: block; }
+    #nav-hint.on { display: block; animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    @keyframes slideDown { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    
     #nav-summary {
-      position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%);
-      z-index: 6; display: none; align-items: center; gap: 10px;
-      background: rgba(255,255,255,.96); color: #16202c; border-radius: 12px;
-      padding: 9px 16px; box-shadow: 0 2px 12px rgba(0,0,0,.28);
-      font-size: 15px; font-weight: 700; white-space: nowrap;
+      position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
+      z-index: 6; display: none; align-items: center; gap: 12px;
+      color: #16202c; border-radius: 16px; padding: 12px 20px;
+      font-size: 16px; font-weight: 700; white-space: nowrap;
     }
-    #nav-summary.on { display: flex; }
-    #nav-summary .dist { color: #2f6bd6; }
+    #nav-summary.on { display: flex; animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    @keyframes slideUp { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    #nav-summary .dist { color: #2f6bd6; font-weight: 800; }
     #nav-summary .sep { opacity: .3; font-weight: 400; }
-    #nav-summary .clear { cursor: pointer; color: #8a94a3; border-left: 1px solid #e3e7ec; padding-left: 11px; }
+    #nav-summary .clear { cursor: pointer; color: #8a94a3; border-left: 1px solid rgba(0,0,0,0.1); padding-left: 14px; transition: color 0.2s; }
     #nav-summary .clear:hover { color: #e5484d; }
 
-    /* --- directions panel (turn-by-turn list, Google-style) --- */
+    /* --- directions panel --- */
     #nav-panel {
-      position: absolute; top: 82px; left: 12px; z-index: 7; width: 330px;
+      position: absolute; top: 82px; left: 16px; z-index: 7; width: 340px;
       max-height: calc(100% - 210px); display: none; flex-direction: column;
-      background: #fff; border-radius: 14px; box-shadow: 0 4px 22px rgba(0,0,0,.28);
-      overflow: hidden; color: #1a2430; font-size: 13px;
+      border-radius: 20px; overflow: hidden; color: #1a2430; font-size: 14px;
     }
-    #nav-panel.on { display: flex; }
-    #nav-panel .np-head { padding: 14px 16px 12px; border-bottom: 1px solid #eef1f5; position: relative; }
-    #nav-panel .np-eta { font-size: 22px; font-weight: 800; color: #e8590c; }
-    #nav-panel .np-eta small { font-size: 13px; font-weight: 600; color: #5b6470; margin-left: 6px; }
-    #nav-panel .np-sub { margin-top: 3px; color: #5b6470; font-size: 12px; }
+    #nav-panel.on { display: flex; animation: slideRight 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    @keyframes slideRight { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+    #nav-panel .np-head { padding: 18px 20px 16px; border-bottom: 1px solid rgba(0,0,0,0.06); position: relative; }
+    #nav-panel .np-eta { font-size: 26px; font-weight: 800; color: #2f6bd6; background: -webkit-linear-gradient(45deg, #2f6bd6, #00d2ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    #nav-panel .np-eta small { font-size: 14px; font-weight: 600; color: #5b6470; margin-left: 8px; -webkit-text-fill-color: #5b6470; }
+    #nav-panel .np-sub { margin-top: 4px; color: #5b6470; font-size: 13px; font-weight: 500; }
     #nav-panel .np-hide {
-      position: absolute; top: 12px; right: 12px; cursor: pointer; border: 0;
-      background: #f1f3f6; width: 26px; height: 26px; border-radius: 50%;
-      font-size: 16px; line-height: 1; color: #43506a; font-weight: 700;
+      position: absolute; top: 16px; right: 16px; cursor: pointer; border: 0;
+      background: rgba(0,0,0,0.05); width: 30px; height: 30px; border-radius: 50%;
+      font-size: 18px; line-height: 1; color: #43506a; font-weight: 700; transition: background 0.2s, transform 0.2s;
     }
-    #nav-panel .np-hide:hover { background: #e6e9ee; }
-    #nav-panel .np-od { padding: 10px 16px; border-bottom: 1px solid #eef1f5; }
-    #nav-panel .np-od .row { display: flex; align-items: center; gap: 9px; padding: 3px 0; }
-    #nav-panel .np-od .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+    #nav-panel .np-hide:hover { background: rgba(0,0,0,0.1); transform: scale(1.1); }
+    #nav-panel .np-od { padding: 12px 20px; border-bottom: 1px solid rgba(0,0,0,0.06); }
+    #nav-panel .np-od .row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+    #nav-panel .np-od .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
     #nav-panel .np-od .dot.a { background: #22c55e; }
     #nav-panel .np-od .dot.b { background: #ef4444; }
-    #nav-panel .np-od .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    #nav-panel .np-swap { margin-left: auto; cursor: pointer; border: 0; background: none; font-size: 16px; color: #5b6470; }
-    #nav-panel .np-swap:hover { color: #2f6bd6; }
-    #nav-panel .np-steps { overflow-y: auto; padding: 2px 0; }
-    #nav-panel .step { display: flex; gap: 12px; padding: 11px 16px; border-bottom: 1px solid #f4f6f8; }
-    #nav-panel .step .ic { font-size: 19px; line-height: 1.1; color: #2f6bd6; flex: none; width: 22px; text-align: center; }
-    #nav-panel .step .tx { flex: 1; line-height: 1.35; }
-    #nav-panel .step .ds { color: #8a94a3; font-size: 12px; margin-top: 3px; }
+    #nav-panel .np-od .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+    #nav-panel .np-swap { margin-left: auto; cursor: pointer; border: 0; background: none; font-size: 18px; color: #5b6470; transition: transform 0.2s, color 0.2s; }
+    #nav-panel .np-swap:hover { color: #2f6bd6; transform: rotate(180deg); }
+    #nav-panel .np-steps { overflow-y: auto; padding: 4px 0; }
+    #nav-panel .step { display: flex; gap: 14px; padding: 14px 20px; border-bottom: 1px solid rgba(0,0,0,0.03); transition: background 0.2s; }
+    #nav-panel .step:hover { background: rgba(0,0,0,0.02); }
+    #nav-panel .step .ic { font-size: 20px; line-height: 1.1; color: #2f6bd6; flex: none; width: 24px; text-align: center; }
+    #nav-panel .step .tx { flex: 1; line-height: 1.4; font-weight: 500; }
+    #nav-panel .step .ds { color: #8a94a3; font-size: 13px; margin-top: 4px; font-weight: 600; }
     #nav-panel .step.arrive .ic { color: #e5484d; }
     #nav-steps-btn {
-      position: absolute; top: 82px; left: 12px; z-index: 7; display: none;
-      background: #2f6bd6; color: #fff; border: 0; border-radius: 10px;
-      padding: 9px 13px; font-weight: 700; font-size: 13px; cursor: pointer;
-      box-shadow: 0 2px 10px rgba(0,0,0,.25);
+      position: absolute; top: 82px; left: 16px; z-index: 7; display: none;
+      background: linear-gradient(135deg, #2f6bd6, #4f85e5); color: #fff; border: 0; border-radius: 12px;
+      padding: 10px 16px; font-weight: 700; font-size: 14px; cursor: pointer;
+      box-shadow: 0 4px 14px rgba(47, 107, 214, 0.4); transition: transform 0.2s, box-shadow 0.2s;
     }
-    #nav-steps-btn.on { display: block; }
+    #nav-steps-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(47, 107, 214, 0.5); }
+    #nav-steps-btn.on { display: block; animation: slideRight 0.3s ease; }
     #nav-panel .np-go {
-      display: block; width: 100%; margin-top: 12px; padding: 10px; border: 0;
-      border-radius: 9px; background: #1a8f4c; color: #fff; font-size: 15px;
-      font-weight: 800; cursor: pointer; letter-spacing: .5px;
+      display: block; width: 100%; margin-top: 16px; padding: 12px; border: 0;
+      border-radius: 12px; background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-size: 16px;
+      font-weight: 800; cursor: pointer; letter-spacing: 0.5px; transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
     }
-    #nav-panel .np-go:hover { background: #16803f; }
+    #nav-panel .np-go:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4); }
 
-    /* --- 3D drive mode: maneuver banner, speedo, car, bottom bar --- */
+    /* --- 3D drive mode --- */
     #drive-ui { display: none; }
     #drive-ui.on { display: block; }
     #drive-banner {
-      position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
-      z-index: 8; display: flex; align-items: center; gap: 14px; max-width: 82vw;
-      background: rgba(18,22,30,.94); color: #fff; padding: 12px 20px 12px 16px;
-      border-radius: 14px; box-shadow: 0 4px 18px rgba(0,0,0,.4);
+      position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+      z-index: 8; display: flex; align-items: center; gap: 16px; max-width: 82vw;
+      color: #fff; padding: 14px 24px 14px 20px;
+      border-radius: 20px;
     }
-    #drive-banner .b-ic { font-size: 34px; line-height: 1; color: #4da3ff; flex: none; }
-    #drive-banner .b-dist { font-size: 26px; font-weight: 800; flex: none; }
-    #drive-banner .b-dist small { font-size: 15px; font-weight: 600; opacity: .8; margin-left: 2px; }
-    #drive-banner .b-road { font-size: 17px; font-weight: 600; opacity: .95; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #drive-banner .b-ic { font-size: 38px; line-height: 1; color: #4da3ff; flex: none; text-shadow: 0 0 12px rgba(77,163,255,0.4); }
+    #drive-banner .b-dist { font-size: 30px; font-weight: 800; flex: none; }
+    #drive-banner .b-dist small { font-size: 16px; font-weight: 700; opacity: .85; margin-left: 3px; }
+    #drive-banner .b-road { font-size: 19px; font-weight: 700; opacity: .95; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    
     #drive-speed {
-      position: absolute; left: 18px; bottom: 90px; z-index: 8; width: 76px; height: 76px;
-      border-radius: 50%; background: #fff; box-shadow: 0 3px 14px rgba(0,0,0,.3);
-      display: flex; flex-direction: column; align-items: center; justify-content: center; color: #16202c;
+      position: absolute; left: 24px; bottom: 100px; z-index: 8; width: 84px; height: 84px;
+      border-radius: 50%; color: #16202c;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
     }
-    #drive-speed b { font-size: 26px; font-weight: 800; line-height: 1; }
-    #drive-speed span { font-size: 10px; font-weight: 600; color: #6b7684; opacity: .7; }
+    #drive-speed b { font-size: 28px; font-weight: 800; line-height: 1; }
+    #drive-speed span { font-size: 11px; font-weight: 700; color: #6b7684; margin-top: 2px; }
+    
     #drive-bottom {
-      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-      z-index: 8; display: flex; align-items: center; gap: 16px;
-      background: rgba(255,255,255,.97); color: #16202c; padding: 10px 14px;
-      border-radius: 14px; box-shadow: 0 3px 16px rgba(0,0,0,.3); font-size: 13px;
+      position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+      z-index: 8; display: flex; align-items: center; gap: 20px;
+      color: #16202c; padding: 12px 18px;
+      border-radius: 20px; font-size: 14px;
     }
-    #drive-bottom .big { font-size: 18px; font-weight: 800; }
-    #drive-bottom .muted { color: #6b7684; }
+    #drive-bottom .big { font-size: 20px; font-weight: 800; }
+    #drive-bottom .muted { color: #6b7684; font-weight: 500; }
     #drive-bottom button {
-      border: 0; background: #eef1f5; color: #23303f; width: 40px; height: 40px;
-      border-radius: 50%; cursor: pointer; font-size: 17px; font-weight: 700;
+      border: 0; background: rgba(0,0,0,0.05); color: #23303f; width: 44px; height: 44px;
+      border-radius: 50%; cursor: pointer; font-size: 18px; font-weight: 700;
+      transition: background 0.2s, transform 0.2s;
     }
-    #drive-bottom button.exit { background: #fdecec; color: #d63a3a; }
-    #drive-bottom button:hover { filter: brightness(.95); }
-    .drive-car { filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)); }
+    #drive-bottom button.exit { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+    #drive-bottom button:hover { transform: scale(1.1); background: rgba(0,0,0,0.1); }
+    #drive-bottom button.exit:hover { background: rgba(239, 68, 68, 0.2); }
+    
+    .drive-car { filter: drop-shadow(0 4px 8px rgba(0,0,0,.4)); }
     .nav-pin {
-      width: 26px; height: 26px; border-radius: 50% 50% 50% 0;
-      transform: rotate(-45deg); border: 2px solid #fff;
-      box-shadow: 0 1px 4px rgba(0,0,0,.4); cursor: pointer;
-      display: grid; place-items: center;
+      width: 28px; height: 28px; border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg); border: 2.5px solid #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,.3); cursor: pointer;
+      display: grid; place-items: center; transition: transform 0.2s;
     }
-    .nav-pin b { transform: rotate(45deg); color: #fff; font-size: 12px; font-weight: 800; }
+    .nav-pin:hover { transform: rotate(-45deg) scale(1.15); }
+    .nav-pin b { transform: rotate(45deg); color: #fff; font-size: 13px; font-weight: 800; }
     .nav-pin.a { background: #22c55e; }
     .nav-pin.b { background: #ef4444; }
 
     /* --- legend / layers card --- */
     #legend {
-      position: absolute; bottom: 26px; left: 12px; z-index: 5;
-      background: rgba(255,255,255,.94); border-radius: 10px; padding: 10px 12px;
-      box-shadow: 0 1px 8px rgba(0,0,0,.2); font-size: 12px; color: #23303f;
-      max-width: 200px;
+      position: absolute; bottom: 32px; left: 16px; z-index: 5;
+      border-radius: 16px; padding: 14px 16px;
+      font-size: 13px; color: #23303f; max-width: 220px; font-weight: 500;
     }
-    #legend b { display: block; margin-bottom: 6px; font-size: 12px; }
-    #legend label { display: flex; align-items: center; gap: 7px; padding: 2px 0; cursor: pointer; }
-    #legend .sw { width: 13px; height: 13px; border-radius: 3px; flex: none; }
+    #legend b { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 700; }
+    #legend label { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; transition: opacity 0.2s; }
+    #legend label:hover { opacity: 0.8; }
+    #legend .sw { width: 14px; height: 14px; border-radius: 4px; flex: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 
-    /* --- live camera readout (F4Map-style) --- */
+    /* --- live camera readout --- */
     #readout {
-      position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 5;
-      background: rgba(20,23,29,.82); color: #e7ecf3; border-radius: 8px;
-      padding: 6px 11px; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-      box-shadow: 0 1px 6px rgba(0,0,0,.25); white-space: nowrap; pointer-events: none;
+      position: absolute; bottom: 36px; left: 50%; transform: translateX(-50%); z-index: 5;
+      color: #e7ecf3; border-radius: 12px;
+      padding: 8px 14px; font: 12px/1.4 'Inter', ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: nowrap; pointer-events: none;
     }
-    #readout b { color: #9ec5f0; font-weight: 600; }
+    #readout b { color: #9ec5f0; font-weight: 700; }
     @media (max-width: 640px) { #readout { display: none; } }
 
-    .maplibregl-ctrl-attrib { font-size: 10px; }
+    .maplibregl-ctrl-attrib { font-size: 11px; font-family: 'Inter', sans-serif; }
 
-    /* --- dark-mode starfield: a static backdrop over the upper (sky) part of
-       the screen. MapLibre paints the sky opaquely into the GL canvas, so stars
-       can't sit *behind* it — this overlay sits on top (pointer-events:none) and
-       is masked to fade out toward the horizon so it blends into the sky glow.
-       Only shown when dark mode is on AND the camera is tilted (3D). --- */
+    /* --- dark-mode starfield --- */
     #stars {
       position: absolute; top: 0; left: 0; right: 0; height: 55%; z-index: 1;
       pointer-events: none; opacity: 0; transition: opacity .6s ease;
@@ -186,49 +214,49 @@
     #stars.on { opacity: 1; }
     #stars i {
       position: absolute; display: block; background: #eaf6ff; border-radius: 50%;
-      box-shadow: 0 0 4px 1px rgba(180,230,255,.7);
+      box-shadow: 0 0 5px 1px rgba(180,230,255,.8);
     }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <div id="stars"></div>
-  <div id="nav-hint"></div>
-  <div id="nav-summary"></div>
-  <div id="nav-panel"></div>
+  <div id="nav-hint" class="glass-panel-dark"></div>
+  <div id="nav-summary" class="glass-panel"></div>
+  <div id="nav-panel" class="glass-panel"></div>
   <button id="nav-steps-btn">📋 Directions ›</button>
 
   <div id="drive-ui">
-    <div id="drive-banner">
+    <div id="drive-banner" class="glass-panel-dark">
       <span class="b-ic"></span>
       <span class="b-dist"></span>
       <span class="b-road"></span>
     </div>
-    <div id="drive-speed"><b>0</b><span>km/h</span></div>
-    <div id="drive-bottom">
+    <div id="drive-speed" class="glass-panel"><b>0</b><span>km/h</span></div>
+    <div id="drive-bottom" class="glass-panel">
       <button class="pause" title="Pause / resume">⏸</button>
       <div><span class="big remain">–</span> <span class="muted dist">–</span><br><span class="muted eta">–</span></div>
       <button class="exit" title="Exit drive mode">✕</button>
     </div>
   </div>
 
-  <div id="readout">zoom <b id="r-zoom">–</b> · tilt <b id="r-tilt">–</b>° · dir <b id="r-dir">–</b>°</div>
+  <div id="readout" class="glass-panel-dark">zoom <b id="r-zoom">–</b> · tilt <b id="r-tilt">–</b>° · dir <b id="r-dir">–</b>°</div>
 
-  <div id="search">
+  <div id="search" class="glass-panel">
     <input id="goto" placeholder="Fly to  lat, lng   (e.g. 21.0369, 105.7809)" />
     <span class="hint" id="goto-hint"></span>
     <button id="goto-btn" title="Fly">➜</button>
   </div>
 
   <div id="controls">
-    <button id="btn-3d" class="on">3D&nbsp;view</button>
-    <button id="btn-dark" title="Neon night mode">🌙 Dark</button>
-    <button id="btn-frame">Frame&nbsp;city</button>
-    <button id="btn-north" title="Reset bearing to north">⌖ North</button>
-    <button id="btn-route" title="Pick start &amp; destination on the map">🧭 Route</button>
+    <button id="btn-3d" class="on glass-panel">3D&nbsp;view</button>
+    <button id="btn-dark" class="glass-panel" title="Neon night mode">🌙 Dark</button>
+    <button id="btn-frame" class="glass-panel">Frame&nbsp;city</button>
+    <button id="btn-north" class="glass-panel" title="Reset bearing to north">⌖ North</button>
+    <button id="btn-route" class="glass-panel" title="Pick start &amp; destination on the map">🧭 Route</button>
   </div>
 
-  <div id="legend">
+  <div id="legend" class="glass-panel">
     <b>Layers</b>
     <label><span class="sw" style="background:#5b6270"></span><input type="checkbox" id="t-roads" checked hidden>Roads &amp; lanes</label>
     <label><span class="sw" style="background:#ffffff;border:1px solid #ccc"></span><input type="checkbox" id="t-mark" checked hidden>Lane markings</label>
@@ -238,6 +266,9 @@
   </div>
 
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+  <!-- three.js (UMD global THREE) — powers the true-3D car in drive mode, rendered
+       into MapLibre's WebGL context via a CustomLayerInterface. CDN, same as MapLibre. -->
+  <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
   <script>
     // ============================================================================
     // 3D City Map — MVP
@@ -253,7 +284,7 @@
     // view are fetched — this is how the whole city renders smoothly (the F4Map
     // approach). No PMTiles browser plugin: plain gzipped MVT over HTTP, the most
     // reliable MapLibre path. Each osm2streets layer is a source-layer in the tiles.
-    const TILE_URL = location.origin + location.pathname.replace(/[^/]*$/, "") + "tiles/{z}/{x}/{y}.pbf";
+    const TILE_URL = location.origin + location.pathname.replace(/[^/]*$/, "") + "api/tiles/{z}/{x}/{y}.pbf?key=DEMO_KEY_123";
     const META = "data/hanoi-meta.json";
     // vector source id -> source-layer name inside the tiles
     const SRC_LAYER = {
@@ -267,13 +298,25 @@
     // ---- shared paint (copied verbatim from the editor so it looks identical) ---
     const LYR = ["coalesce", ["get", "layer"], 0];
     const sortKey = ["coalesce", ["get", "layer"], 0];
-    const laneColor = [
+    const laneTypeColor = [
       "match", ["get", "type"],
       "Driving", "#5b6270", "Parking", "#494f5b", "Sidewalk", "#8a90a0",
       "Footway", "#8a90a0", "Shoulder", "#40454f", "Biking", "#2f6b4f",
       "Bus", "#6b3a3a", "SharedLeftTurn", "#6b5f3a", "LightRail", "#5a4a6b",
       "#565c68",
     ];
+    // highway=service roads get a distinct surface so they read apart from public
+    // roads: ALLEY (service=alley — narrow Hanoi ngõ/hẻm, no 4-wheeler) in a warm
+    // tan, plain PRIVATE service in a muted warm-gray. Only the driving surface is
+    // tinted (not any sidewalk of a service road). `base` = the normal per-type
+    // colour used when `svc` is absent; passed in so day + dark share one shape.
+    const svcTint = (base, alley, priv) => [
+      "case",
+      ["all", ["==", ["get", "type"], "Driving"], ["==", ["get", "svc"], "alley"]], alley,
+      ["all", ["==", ["get", "type"], "Driving"], ["==", ["get", "svc"], "private"]], priv,
+      base,
+    ];
+    const laneColor = svcTint(laneTypeColor, "#7a6b58", "#cfd3d9");
     const markColor = [
       "match", ["get", "type"],
       "center line", "#e8c84a", "vehicle stop line", "#ffffff",
@@ -311,6 +354,31 @@
         id: "lanes" + sfx, type: "fill", source: "lanes", filter: road(flt),
         layout: { "fill-sort-key": sortKey },
         paint: { "fill-color": laneColor, "fill-opacity": 1 },
+      },
+      {
+        // alley signal: a dashed light rim traced along the alley driving surface
+        // (polygon outline) — reads as "narrow, not a through car road" at a glance.
+        id: "lanes-alley" + sfx, type: "line", source: "lanes",
+        filter: ["all", flt, ["==", ["get", "svc"], "alley"], ["==", ["get", "type"], "Driving"]],
+        layout: { "line-sort-key": sortKey, "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": "#d8c9a8",
+          "line-width": ["interpolate", ["linear"], LYR, 0, 0.8, 1, 1.4],
+          "line-dasharray": [2, 2],
+          "line-opacity": 0.9,
+        },
+      },
+      {
+        // private service road: a bold white border around the light-grey surface
+        // so it stands out clearly from public roads.
+        id: "lanes-service" + sfx, type: "line", source: "lanes",
+        filter: ["all", flt, ["==", ["get", "svc"], "private"], ["==", ["get", "type"], "Driving"]],
+        layout: { "line-sort-key": sortKey, "line-join": "round", "line-cap": "round" },
+        paint: {
+          "line-color": "#ffffff",
+          "line-width": ["interpolate", ["linear"], LYR, 0, 1.2, 1, 2.2],
+          "line-opacity": 0.95,
+        },
       },
       {
         id: "turn-left" + sfx, type: "fill", source: "lanes",
@@ -718,7 +786,11 @@
       // roads/junctions: in dark they need to sit CLEARLY above the near-black
       // ground (else the ways vanish), so a mid slate-blue surface + a faint cyan
       // casing rim that ties them into the neon theme instead of receding.
-      for (const id of ["lanes", "lanes-hi"]) set(id, "fill-color", dark ? "#333d4d" : laneColor);
+      // service roads stay distinct in dark too (warm tones over the slate base)
+      const laneColorDark = svcTint("#333d4d", "#5a4f3a", "#cfd3d9");
+      for (const id of ["lanes", "lanes-hi"]) set(id, "fill-color", dark ? laneColorDark : laneColor);
+      for (const id of ["lanes-alley", "lanes-alley-hi"]) set(id, "line-color", dark ? "#8a7d55" : "#d8c9a8");
+      // private service keeps its bold white border in both themes (high contrast)
       set("intersections", "fill-color", dark ? "#333d4d" : "#5b6270");
       for (const id of ["lanes-edge", "lanes-edge-hi", "inter-edge"])
         set(id, "line-color", dark ? "#2aa7b8" : "#1a1e25");
@@ -755,7 +827,7 @@
       });
     };
     map.on("load", () => {
-      toggle("t-roads", "lanes", "lanes-edge", "lanes-hi", "lanes-edge-hi", "intersections", "inter-edge");
+      toggle("t-roads", "lanes", "lanes-edge", "lanes-hi", "lanes-edge-hi", "lanes-alley", "lanes-alley-hi", "lanes-service", "lanes-service-hi", "intersections", "inter-edge");
       toggle("t-mark", "markings", "markings-hi");
       toggle("t-turn", "turn-left", "turn-right", "turn-arrows", "turn-left-hi", "turn-right-hi", "turn-arrows-hi");
       toggle("t-bldg", "buildings-3d");
@@ -849,7 +921,7 @@
       ensureGraph() {
         if (this.graph) return Promise.resolve(this.graph);
         if (this.loading) return this.loading;
-        this.loading = fetch("data/graph.json")
+        this.loading = fetch("api/graph?key=DEMO_KEY_123")
           .then((r) => { if (!r.ok) throw new Error(`graph.json ${r.status}`); return r.json(); })
           .then((g) => { this.build(g); return this.graph; })
           .catch((err) => { this.loading = null; console.warn("[nav] graph load failed:", err); throw err; });
@@ -1166,7 +1238,7 @@
     const fitRoute = (coords) => {
       let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
       for (const [x, y] of coords) { if (x < minx) minx = x; if (y < miny) miny = y; if (x > maxx) maxx = x; if (y > maxy) maxy = y; }
-      map.fitBounds([[minx, miny], [maxx, maxy]], { padding: { top: 90, bottom: 130, left: 360, right: 60 }, pitch: 0, duration: 700, maxZoom: 16 });
+      map.fitBounds([[minx, miny], [maxx, maxy]], { padding: { top: 90, bottom: 130, left: 360, right: 60 }, pitch: map.getPitch(), duration: 700, maxZoom: 16 });
     };
 
     // ================= 3D DRIVE MODE (Task 10) =================
@@ -1190,21 +1262,103 @@
       return [lng + (distM * Math.sin(headingDeg * rad)) / (111320 * Math.cos(lat * rad)),
               lat + (distM * Math.cos(headingDeg * rad)) / 111320];
     };
-    const carEl = () => {
-      const d = document.createElement("div");
-      d.className = "drive-car";
-      const img = document.createElement("img");
-      // trimmed top-view car (858x1633); keep aspect ratio so it isn't squashed
-      img.src = "image/car.png"; img.width = 30; img.height = 57; img.alt = "";
-      // fallback to a simple SVG car if car.png isn't present
-      img.onerror = () => {
-        d.innerHTML = `<svg width="40" height="40" viewBox="0 0 36 36">
-          <rect x="11" y="5" width="14" height="26" rx="5" fill="#2f6bd6" stroke="#fff" stroke-width="1.6"/>
-          <rect x="13.5" y="8" width="9" height="6" rx="2" fill="#cfe0f7"/>
-          <rect x="13.5" y="21" width="9" height="5" rx="2" fill="#1b4a8f"/></svg>`;
-      };
-      d.appendChild(img);
-      return d;
+    // ---- true-3D car (three.js) ------------------------------------------------
+    // A real volumetric mesh rendered INTO MapLibre's GL context via a custom layer,
+    // so it pitches with the camera, depth-tests against the 3D buildings, scales in
+    // real metres, and is lit by three.js lights. Built procedurally (no external
+    // model file) so it stays self-contained; swap in a glTF later if desired.
+    // Local frame: metres, Y-up, car FORWARD = +Z, wheels on the ground plane (y≈0).
+    const buildCarMesh = () => {
+      const g = new THREE.Group();
+      const paint = new THREE.MeshStandardMaterial({ color: 0xd8261f, metalness: 0.45, roughness: 0.42 });
+      const glass = new THREE.MeshStandardMaterial({ color: 0x151b26, metalness: 0.3, roughness: 0.15 });
+      const trim  = new THREE.MeshStandardMaterial({ color: 0x111318, metalness: 0.5, roughness: 0.6 });
+      const tyre  = new THREE.MeshStandardMaterial({ color: 0x0d0d10, metalness: 0.1, roughness: 0.9 });
+      const lamp  = new THREE.MeshStandardMaterial({ color: 0xfff4c2, emissive: 0xffe89a, emissiveIntensity: 0.9, roughness: 0.3 });
+      const rearL = new THREE.MeshStandardMaterial({ color: 0xd23a3a, emissive: 0x7a1414, emissiveIntensity: 0.7, roughness: 0.4 });
+      const box = (w, h, d, mat, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); return m; };
+
+      const L = 4.2, W = 1.85, wheelR = 0.34;
+      // lower body (chassis) — sits just above the wheels
+      g.add(box(W, 0.55, L, paint, 0, wheelR + 0.30, 0));
+      // slightly narrower sill/skirt so the body reads rounded, not a single brick
+      g.add(box(W - 0.12, 0.30, L - 0.2, paint, 0, wheelR + 0.10, 0));
+      // cabin/greenhouse — shorter, set back a touch, dark glass
+      g.add(box(W - 0.24, 0.5, L * 0.44, glass, 0, wheelR + 0.78, -0.15));
+      // roof cap (body colour) over the glass
+      g.add(box(W - 0.30, 0.10, L * 0.40, paint, 0, wheelR + 1.02, -0.15));
+      // headlights (front = +Z) and tail lights (rear = -Z)
+      g.add(box(0.34, 0.16, 0.06, lamp, +0.55, wheelR + 0.34, L / 2 - 0.02));
+      g.add(box(0.34, 0.16, 0.06, lamp, -0.55, wheelR + 0.34, L / 2 - 0.02));
+      g.add(box(0.34, 0.14, 0.06, rearL, +0.55, wheelR + 0.40, -L / 2 + 0.02));
+      g.add(box(0.34, 0.14, 0.06, rearL, -0.55, wheelR + 0.40, -L / 2 + 0.02));
+      // wheels — cylinders with axle along X (across the car)
+      const wheelGeo = new THREE.CylinderGeometry(wheelR, wheelR, 0.26, 20);
+      for (const [x, z] of [[ (W/2)-0.02, L/2 - 1.1], [ -(W/2)+0.02, L/2 - 1.1], [ (W/2)-0.02, -L/2 + 1.05], [ -(W/2)+0.02, -L/2 + 1.05]]) {
+        const wm = new THREE.Mesh(wheelGeo, tyre);
+        wm.rotation.z = Math.PI / 2; // stand the cylinder up as a wheel (axle → X)
+        wm.position.set(x, wheelR, z);
+        g.add(wm);
+      }
+      // soft fake shadow on the ground (MapLibre extrusions can't cast real ones):
+      // a radial-gradient plane laid flat under the car, so it reads as grounded.
+      const cvs = document.createElement("canvas"); cvs.width = cvs.height = 128;
+      const cx = cvs.getContext("2d");
+      const grd = cx.createRadialGradient(64, 64, 6, 64, 64, 62);
+      grd.addColorStop(0, "rgba(0,0,0,0.42)"); grd.addColorStop(1, "rgba(0,0,0,0)");
+      cx.fillStyle = grd; cx.fillRect(0, 0, 128, 128);
+      const shTex = new THREE.CanvasTexture(cvs);
+      const shadow = new THREE.Mesh(new THREE.PlaneGeometry(L + 1.4, W + 1.6),
+        new THREE.MeshBasicMaterial({ map: shTex, transparent: true, depthWrite: false }));
+      shadow.rotation.x = -Math.PI / 2; // lie flat on the XZ ground plane
+      shadow.position.y = 0.02;
+      g.add(shadow);
+      return g;
+    };
+
+    // Custom layer: renders the car group into MapLibre's context each frame,
+    // georeferenced from DRIVE.carPos/carHeading. Added once, then shown/hidden.
+    const carLayer = {
+      id: "drive-car-3d", type: "custom", renderingMode: "3d",
+      onAdd(map, gl) {
+        this.camera = new THREE.Camera();
+        this.scene = new THREE.Scene();
+        this.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+        const key = new THREE.DirectionalLight(0xffffff, 0.85); key.position.set(0.6, 1.4, 0.8);
+        this.scene.add(key);
+        const fill = new THREE.DirectionalLight(0xbcd0ff, 0.35); fill.position.set(-0.7, 0.6, -0.5);
+        this.scene.add(fill);
+        this.car = buildCarMesh(); this.car.visible = false;
+        this.scene.add(this.car);
+        this.renderer = new THREE.WebGLRenderer({ canvas: map.getCanvas(), context: gl, antialias: true });
+        this.renderer.autoClear = false;
+      },
+      render(gl, matrix) {
+        if (!DRIVE.carPos || !this.car) return;
+        // v4 passes the mercator matrix as an array; v5 may pass a projection object
+        const mArr = Array.isArray(matrix) ? matrix
+          : (matrix && matrix.defaultProjectionData ? matrix.defaultProjectionData.mainMatrix : matrix && matrix.mainMatrix);
+        if (!mArr) return;
+        const c = maplibregl.MercatorCoordinate.fromLngLat({ lng: DRIVE.carPos[0], lat: DRIVE.carPos[1] }, 0);
+        const s = c.meterInMercatorCoordinateUnits();
+        // yaw the car about its local (Y-up) vertical: heading 0=N, 90=E (see derivation)
+        this.car.rotation.y = Math.PI - DRIVE.carHeading * Math.PI / 180;
+        const l = new THREE.Matrix4()
+          .makeTranslation(c.x, c.y, c.z)
+          .scale(new THREE.Vector3(s, -s, s))
+          .multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)); // Y-up model → map Z-up
+        this.camera.projectionMatrix = new THREE.Matrix4().fromArray(mArr).multiply(l);
+        this.renderer.resetState();
+        this.renderer.render(this.scene, this.camera);
+      },
+    };
+
+    let carLayerAdded = false;
+    const setupCarLayer = (pos, heading) => {
+      DRIVE.carPos = pos; DRIVE.carHeading = heading;
+      if (typeof THREE === "undefined") return; // three.js failed to load → skip the car, drive still works
+      if (!carLayerAdded) { map.addLayer(carLayer); carLayerAdded = true; }
+      if (carLayer.car) carLayer.car.visible = true;
     };
     const hideForDrive = (on) => {
       for (const id of ["controls", "legend", "readout", "search", "nav-summary"]) {
@@ -1212,7 +1366,7 @@
       }
     };
 
-    const DRIVE = { active: false, raf: 0, paused: false, d: 0, total: 0, timeS: 0, car: null, last: 0, lastGuide: 0 };
+    const DRIVE = { active: false, raf: 0, paused: false, d: 0, total: 0, timeS: 0, carPos: null, carHeading: 0, last: 0, lastGuide: 0 };
 
     // exterior ring of a lane polygon (used to dedupe queried lane features)
     const ringOf = (g) => g.type === "Polygon" ? g.coordinates[0] : g.type === "MultiPolygon" ? g.coordinates[0][0] : null;
@@ -1246,7 +1400,10 @@
     const stopDrive = () => {
       DRIVE.active = false;
       if (DRIVE.raf) cancelAnimationFrame(DRIVE.raf);
-      if (DRIVE.car) { DRIVE.car.remove(); DRIVE.car = null; }
+      // hide (don't remove) the 3D car layer so its single WebGL renderer is reused
+      DRIVE.carPos = null;
+      if (carLayer.car) carLayer.car.visible = false;
+      if (carLayerAdded) map.triggerRepaint(); // clear the last car frame
       clearLaneGuide();
       driveUI.classList.remove("on");
       hideForDrive(false);
@@ -1283,12 +1440,15 @@
         const man = mans[mi];
         dBanner.querySelector(".b-ic").textContent = TURN_GLYPH[man.turn] || "↑";
         dBanner.querySelector(".b-dist").textContent = fmtDist(Math.max(0, turnAt[mi] - DRIVE.d));
-        dBanner.querySelector(".b-road").textContent = man.name || (man.turn === "arrive" ? "Arrive at destination" : "");
-        dSpeedEl.textContent = Math.round((mans[Math.max(0, mi - 1)].spd || 8) * 3.6);
-        const remainT = DRIVE.timeS * (1 - DRIVE.d / total);
+        
+        const isFinished = DRIVE.d >= total;
+        dBanner.querySelector(".b-road").textContent = isFinished ? "Arrived at destination" : (man.name || (man.turn === "arrive" ? "Arrive at destination" : ""));
+        dSpeedEl.textContent = isFinished ? "0" : Math.round((mans[Math.max(0, mi - 1)].spd || 8) * 3.6);
+        
+        const remainT = Math.max(0, DRIVE.timeS * (1 - DRIVE.d / total));
         dBottom.querySelector(".remain").textContent = fmtDur(remainT);
-        dBottom.querySelector(".dist").textContent = fmtDist(total - DRIVE.d);
-        dBottom.querySelector(".eta").textContent = "Arrive ~" + clockAfter(remainT);
+        dBottom.querySelector(".dist").textContent = fmtDist(Math.max(0, total - DRIVE.d));
+        dBottom.querySelector(".eta").textContent = isFinished ? "Arrived" : "Arrive ~" + clockAfter(remainT);
       };
       const tick = (ts) => {
         if (!DRIVE.active) return;
@@ -1301,7 +1461,7 @@
           if (DRIVE.d > total) DRIVE.d = total;
         }
         const s = sampleAt(DRIVE.d);
-        DRIVE.car.setLngLat(s.pos);
+        DRIVE.carPos = s.pos; DRIVE.carHeading = s.heading; // 3D car reads these in its render()
         // ease the camera bearing toward the heading so turns glide instead of snapping
         const diff = ((s.heading - DRIVE.camBearing + 540) % 360) - 180;
         DRIVE.camBearing = (DRIVE.camBearing + diff * Math.min(1, dt * TURN_EASE) + 360) % 360;
@@ -1313,7 +1473,10 @@
           updateLaneGuide(s.pos, winWays);
         }
         updateHud(mi);
-        if (DRIVE.d >= total && !DRIVE.paused) { DRIVE.paused = true; dBottom.querySelector(".pause").textContent = "▶"; }
+        if (DRIVE.d >= total && !DRIVE.paused) { 
+          DRIVE.paused = true; 
+          dBottom.querySelector(".pause").textContent = "↺"; 
+        }
         DRIVE.raf = requestAnimationFrame(tick);
       };
 
@@ -1323,7 +1486,7 @@
       togglePanel(false); navStepsBtn.classList.remove("on"); navHint.classList.remove("on");
       driveUI.classList.add("on");
       dBottom.querySelector(".pause").textContent = "⏸";
-      DRIVE.car = new maplibregl.Marker({ element: carEl(), anchor: "center" }).setLngLat(s0.pos).addTo(map);
+      setupCarLayer(s0.pos, s0.heading);
       map.jumpTo({ center: moveAlong(s0.pos, s0.heading, LOOK_AHEAD_M), bearing: s0.heading, pitch: CAR_PITCH, zoom: CAR_ZOOM });
       DRIVE.raf = requestAnimationFrame(tick);
     };

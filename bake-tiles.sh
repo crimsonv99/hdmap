@@ -34,7 +34,7 @@ done
 # route's ways). Everything else is dropped for size.
 KEEP=(-y type -y layer -y allowed_turns -y width -y speed_limit -y control
   -y intersection_kind -y bearing -y turns -y osm_way_id -y osm_way_ids -y direction
-  -y height -y base -y height_source -y name -y levels)
+  -y svc -y height -y base -y height_source -y name -y levels)
 COMMON=(--force --drop-densest-as-needed --no-simplification-of-shared-nodes --preserve-input-order "${KEEP[@]}")
 
 echo "Baking BASE layers (water/green/lanes/intersections/buildings) z$BASE_MINZOOM-$MAXZOOM …"
