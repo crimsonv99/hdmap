@@ -290,7 +290,6 @@
     const SRC_LAYER = {
       lanes: "lanes", markings: "markings", intersections: "intersections",
       "turn-arrows": "turn_arrows", buildings: "buildings",
-      water: "water", green: "green",
     };
     // bound panning to the baked city extent so you can't drift into empty tiles
     const CITY_BOUNDS = [[105.752, 20.952], [105.889, 21.108]]; // full bake bbox
@@ -394,33 +393,15 @@
     const styleLayers = [
       { id: "bg", type: "background", paint: { "background-color": "#e7ecdb" } },
       { id: "satellite", type: "raster", source: "sat", layout: { visibility: "none" } },
-      // flat 2D street map for the zoomed-out view. Fades out as you cross the
-      // switch zoom, where the 3D HD layers take over.
-      {
-        id: "basemap-2d", type: "raster", source: "basemap", maxzoom: 16,
-        paint: {
-          "raster-opacity": ["interpolate", ["linear"], ["zoom"], 15, 1, 15.5, 0],
-        },
-      },
-      // dark 2D basemap — same fade, hidden until dark mode swaps it in
-      {
-        id: "basemap-2d-dark", type: "raster", source: "basemapDark", maxzoom: 16,
-        layout: { visibility: "none" },
-        paint: {
-          "raster-opacity": ["interpolate", ["linear"], ["zoom"], 15, 1, 15.5, 0],
-        },
-      },
-      // land cover under the roads — so the 3D scene isn't bare beige. Green
-      // parks/forest and blue water (the flat 2D basemap supplies these below the
-      // switch zoom; these are their 3D-mode counterparts, gated to z15+).
-      {
-        id: "green", type: "fill", source: "green",
-        paint: { "fill-color": "#c6dcac", "fill-opacity": 0.9 },
-      },
-      {
-        id: "water", type: "fill", source: "water",
-        paint: { "fill-color": "#9ec6e0", "fill-opacity": 1 },
-      },
+      // Permanent basemap UNDERLAY. The HD vector layers (roads/buildings) draw on
+      // TOP of this; wherever we don't bake HD data (river banks, floodplain, parks,
+      // anything outside our lane/building coverage) the basemap fills it in with
+      // real cartography. This replaces the old baked water/green context layers —
+      // the basemap owns all of that now, so nothing renders as blank beige ground.
+      // Stays visible at every zoom (source goes to z20, overzooms above that).
+      { id: "basemap-2d", type: "raster", source: "basemap" },
+      // dark counterpart — hidden until dark mode / satellite swaps it out
+      { id: "basemap-2d-dark", type: "raster", source: "basemapDark", layout: { visibility: "none" } },
       // intersection casing then fill (fuse road + junction into one surface)
       {
         id: "inter-edge", type: "line", source: "intersections",
@@ -731,6 +712,17 @@
     const starsEl = document.getElementById("stars");
     let darkOn = false;
 
+    // Underlay selection: exactly ONE of {satellite, light street, dark street} is
+    // shown beneath the HD layers. Satellite (the "Satellite base" toggle) wins;
+    // otherwise the street basemap follows the day/night theme.
+    let satOn = false;
+    const updateBase = () => {
+      const v = (id, on) => { if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none"); };
+      v("satellite", satOn);
+      v("basemap-2d", !satOn && !darkOn);
+      v("basemap-2d-dark", !satOn && darkOn);
+    };
+
     // build a static starfield once (no animation — "static stars" as asked).
     // Deterministic-ish sparse dots across the upper sky band.
     (function seedStars() {
@@ -757,10 +749,8 @@
     const applyTheme = (dark) => {
       const set = (id, prop, val) => { if (map.getLayer(id)) map.setPaintProperty(id, prop, val); };
       const vis = (id, on) => { if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none"); };
-      // ground + land cover
+      // ground (shows only while basemap tiles load; the basemap owns land cover)
       set("bg", "background-color", dark ? "#0a0d12" : "#e7ecdb");
-      set("green", "fill-color", dark ? "#10241a" : "#c6dcac");
-      set("water", "fill-color", dark ? "#0b1f2e" : "#9ec6e0");
       // roads/junctions: in dark they need to sit CLEARLY above the near-black
       // ground (else the ways vanish), so a mid slate-blue surface + a faint cyan
       // casing rim that ties them into the neon theme instead of receding.
@@ -777,9 +767,7 @@
       set("buildings-3d", "fill-extrusion-vertical-gradient", true);
       set("buildings-3d", "fill-extrusion-opacity", dark ? 1 : 0.92);
       vis("buildings-edge", dark); // keep a faint neon rim, dialled down (see layer paint)
-      // 2D basemap swap (below the switch zoom)
-      vis("basemap-2d", !dark);
-      vis("basemap-2d-dark", dark);
+      updateBase(); // street basemap follows the theme (unless satellite is on)
       // sky only — keep the day sun so cyan walls stay lit/solid (flattening the
       // light was what darkened the walls and made them look see-through)
       map.setSky(dark ? NIGHT_SKY : DAY_SKY);
@@ -808,11 +796,13 @@
       toggle("t-mark", "markings", "markings-hi");
       toggle("t-turn", "turn-left", "turn-right", "turn-arrows", "turn-left-hi", "turn-right-hi", "turn-arrows-hi");
       toggle("t-bldg", "buildings-3d");
-      // satellite base toggle
+      // satellite base toggle — swaps the underlay between the street basemap and
+      // aerial imagery (exactly one is shown; HD layers stay on top of whichever).
       const sat = document.getElementById("t-sat");
       sat.parentElement.addEventListener("click", () => {
         sat.checked = !sat.checked;
-        map.setLayoutProperty("satellite", "visibility", sat.checked ? "visible" : "none");
+        satOn = sat.checked;
+        updateBase();
       });
     });
 

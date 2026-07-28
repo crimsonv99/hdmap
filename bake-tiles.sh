@@ -29,12 +29,9 @@ for f in lanes markings intersections turn_arrows buildings; do
   [ -s "$L/$f.ndjson" ] || { echo "missing/empty: $L/$f.ndjson (run bake-city.mjs first)"; exit 1; }
 done
 
-# Clip everything to the bake bbox. water/green come from bake-landcover.mjs, which
-# uses `osmium --strategy smart` to ASSEMBLE whole river/park relations — so those
-# polygons legitimately extend far past the bbox (e.g. Sông Đuống runs east to
-# ~106.28). Without this clip tippecanoe would emit thousands of stray out-of-view
-# tiles. Reads the bbox [W,S,E,N] that bake-city.mjs wrote → clip order is
-# minlon,minlat,maxlon,maxlat, which matches.
+# Clip everything to the bake bbox so complete_ways overhangs at the edge don't
+# leak stray out-of-view tiles. Reads the bbox [W,S,E,N] that bake-city.mjs wrote →
+# clip order is minlon,minlat,maxlon,maxlat, which matches.
 BBOX=$(python3 -c "import json;b=json.load(open('build/bake-meta.json'))['bbox'];print('%s,%s,%s,%s'%(b[0],b[1],b[2],b[3]))" 2>/dev/null || true)
 [ -n "$BBOX" ] && echo "clipping to bbox: $BBOX" || echo "no bake-meta.json bbox — skipping clip"
 
@@ -47,10 +44,12 @@ KEEP=(-y type -y layer -y allowed_turns -y width -y speed_limit -y control
 COMMON=(--force --drop-densest-as-needed --no-simplification-of-shared-nodes --preserve-input-order "${KEEP[@]}")
 [ -n "$BBOX" ] && COMMON+=(--clip-bounding-box="$BBOX")
 
-echo "Baking BASE layers (water/green/lanes/intersections/buildings) z$BASE_MINZOOM-$MAXZOOM …"
+# NOTE: water/green land cover is NO LONGER baked. The viewer draws a permanent
+# street/satellite basemap underlay (index.html) that supplies all context —
+# rivers, banks, parks, everything — so we don't bake (or maintain) those layers.
+# That also retired bake-landcover.mjs and the osmium smart-relation assembly.
+echo "Baking BASE layers (lanes/intersections/buildings) z$BASE_MINZOOM-$MAXZOOM …"
 tippecanoe -o build/base.pmtiles "${COMMON[@]}" -Z"$BASE_MINZOOM" -z"$MAXZOOM" \
-  -L water:"$L/water.ndjson" \
-  -L green:"$L/green.ndjson" \
   -L lanes:"$L/lanes.ndjson" \
   -L intersections:"$L/intersections.ndjson" \
   -L buildings:"$L/buildings.ndjson"
