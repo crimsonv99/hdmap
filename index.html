@@ -355,19 +355,9 @@
         layout: { "fill-sort-key": sortKey },
         paint: { "fill-color": laneColor, "fill-opacity": 1 },
       },
-      // private service = light-grey FILL only (no outline). Alleys (service=alley)
-      // get a bold solid LIGHT-BROWN stroke so the narrow ngõ/hẻm read as thick
-      // brown paths instead of thin dark ribbons.
-      {
-        id: "lanes-alley" + sfx, type: "line", source: "lanes",
-        filter: ["all", flt, ["==", ["get", "svc"], "alley"], ["==", ["get", "type"], "Driving"]],
-        layout: { "line-sort-key": sortKey, "line-join": "round", "line-cap": "round" },
-        paint: {
-          "line-color": "#c2a06a",
-          "line-width": ["interpolate", ["linear"], LYR, 0, 3, 1, 4.5],
-          "line-opacity": 1,
-        },
-      },
+      // service roads distinguished by FILL COLOUR alone: private = medium grey,
+      // alley = light brown. No stroke/outline (a line on a lane polygon traces its
+      // border, which on a narrow alley reads as an ugly double line).
       {
         id: "turn-left" + sfx, type: "fill", source: "lanes",
         filter: ["all", flt, ["==", ["get", "type"], "Driving"],
@@ -775,7 +765,7 @@
       // ground (else the ways vanish), so a mid slate-blue surface + a faint cyan
       // casing rim that ties them into the neon theme instead of receding.
       // service roads stay distinct in dark too (warm tones over the slate base)
-      const laneColorDark = svcTint("#333d4d", "#5a4f3a", "#8d939e");
+      const laneColorDark = svcTint("#333d4d", "#c2a06a", "#8d939e");
       for (const id of ["lanes", "lanes-hi"]) set(id, "fill-color", dark ? laneColorDark : laneColor);
       // private service keeps its bold white border in both themes (high contrast)
       set("intersections", "fill-color", dark ? "#333d4d" : "#5b6270");
@@ -814,7 +804,7 @@
       });
     };
     map.on("load", () => {
-      toggle("t-roads", "lanes", "lanes-edge", "lanes-hi", "lanes-edge-hi", "lanes-alley", "lanes-alley-hi", "intersections", "inter-edge");
+      toggle("t-roads", "lanes", "lanes-edge", "lanes-hi", "lanes-edge-hi", "intersections", "inter-edge");
       toggle("t-mark", "markings", "markings-hi");
       toggle("t-turn", "turn-left", "turn-right", "turn-arrows", "turn-left-hi", "turn-right-hi", "turn-arrows-hi");
       toggle("t-bldg", "buildings-3d");
