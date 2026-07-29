@@ -1682,8 +1682,11 @@
         // paint the immediate upcoming-turn stretch yellow (car → next turn), rest blue
         const tsrc = map.getSource("nav-turn");
         if (tsrc) {
+          // yellow = a short band AT the turn (last ~35 m into it), shown once the
+          // turn is within range — a "turn here" cue, not the whole approach
+          const TURN_BAND_M = 35;
           const nearTurn = mans[mi] && /left|right|uturn/.test(mans[mi].turn) && (turnAt[mi] - DRIVE.d) < 160;
-          const seg = nearTurn ? sliceRoute(DRIVE.d, turnAt[mi]) : null;
+          const seg = nearTurn ? sliceRoute(Math.max(DRIVE.d, turnAt[mi] - TURN_BAND_M), turnAt[mi]) : null;
           tsrc.setData(seg ? { type: "Feature", geometry: { type: "LineString", coordinates: seg } } : { type: "FeatureCollection", features: [] });
         }
         if (ts - DRIVE.lastGuide > 180) { // throttle lane highlight; window = current way + one ahead
