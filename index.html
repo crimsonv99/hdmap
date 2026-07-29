@@ -57,6 +57,13 @@
     }
     #controls button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.15); }
     #controls button.on { background: linear-gradient(135deg, #2f6bd6, #4f85e5); color: #fff; border: none; }
+    /* segmented 2D | 3D toggle — the ACTIVE mode is highlighted, so the current
+       view is never ambiguous */
+    #controls .seg { display: flex; gap: 4px; padding: 5px; }
+    #controls .seg button { flex: 1; padding: 7px 6px; border-radius: 9px; background: transparent; }
+    #controls .seg button:hover { transform: none; box-shadow: none; background: rgba(0,0,0,.06); }
+    #controls .seg button.active { background: linear-gradient(135deg, #2f6bd6, #4f85e5); color: #fff; }
+    #controls .seg button.active:hover { background: linear-gradient(135deg, #2f6bd6, #4f85e5); }
 
     /* --- navigation: pick-mode hint pill + snapped-point markers --- */
     #nav-hint {
@@ -133,25 +140,43 @@
     /* --- 3D drive mode --- */
     #drive-ui { display: none; }
     #drive-ui.on { display: block; }
+    /* maneuver card — top-LEFT, nav-app style (arrow + distance + street, then a
+       "Then <arrow>" preview of the maneuver after it) */
     #drive-banner {
-      position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-      z-index: 8; display: flex; align-items: center; gap: 16px; max-width: 82vw;
-      color: #fff; padding: 14px 24px 14px 20px;
-      border-radius: 20px;
+      position: absolute; top: 18px; left: 16px; z-index: 8;
+      color: #fff; padding: 14px 18px; border-radius: 18px;
+      min-width: 210px; max-width: 340px;
     }
-    #drive-banner .b-ic { font-size: 38px; line-height: 1; color: #4da3ff; flex: none; text-shadow: 0 0 12px rgba(77,163,255,0.4); }
-    #drive-banner .b-dist { font-size: 30px; font-weight: 800; flex: none; }
-    #drive-banner .b-dist small { font-size: 16px; font-weight: 700; opacity: .85; margin-left: 3px; }
-    #drive-banner .b-road { font-size: 19px; font-weight: 700; opacity: .95; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    
+    #drive-banner .b-top { display: flex; align-items: center; gap: 14px; }
+    #drive-banner .b-ic { font-size: 40px; line-height: 1; color: #2fd06e; flex: none; }
+    #drive-banner .b-info { display: flex; flex-direction: column; min-width: 0; }
+    #drive-banner .b-dist { font-size: 27px; font-weight: 800; line-height: 1.1; }
+    #drive-banner .b-dist small { font-size: 15px; font-weight: 700; opacity: .85; margin-left: 3px; }
+    #drive-banner .b-road { font-size: 16px; font-weight: 700; opacity: .92; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 250px; }
+    #drive-banner .b-then { display: none; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px;
+      border-top: 1px solid rgba(255,255,255,.16); font-size: 14px; opacity: .8; }
+    #drive-banner .b-then.on { display: flex; }
+    #drive-banner .b-then .b-then-ic { font-size: 20px; color: #2fd06e; }
+
+    /* speed cluster — top-RIGHT: posted-limit disc over current-speed pill */
     #drive-speed {
-      position: absolute; left: 24px; bottom: 100px; z-index: 8; width: 84px; height: 84px;
-      border-radius: 50%; color: #16202c;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      position: absolute; right: 14px; top: 84px; z-index: 8;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
     }
-    #drive-speed b { font-size: 28px; font-weight: 800; line-height: 1; }
-    #drive-speed span { font-size: 11px; font-weight: 700; color: #6b7684; margin-top: 2px; }
-    
+    #drive-speed .limit {
+      width: 60px; height: 60px; border-radius: 50%; background: #fff; border: 5px solid #e23b3b;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; color: #16202c;
+      box-shadow: 0 3px 10px rgba(0,0,0,.28);
+    }
+    #drive-speed .limit b { font-size: 21px; font-weight: 800; line-height: 1; }
+    #drive-speed .limit span { font-size: 8px; font-weight: 700; color: #8a90a0; letter-spacing: .3px; }
+    #drive-speed .cur {
+      background: rgba(20,26,34,.85); color: #fff; border-radius: 14px; padding: 6px 0; min-width: 60px;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    #drive-speed .cur b { font-size: 22px; font-weight: 800; line-height: 1; }
+    #drive-speed .cur span { font-size: 9px; font-weight: 700; opacity: .65; }
+
     #drive-bottom {
       position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
       z-index: 8; display: flex; align-items: center; gap: 20px;
@@ -170,6 +195,14 @@
     #drive-bottom button.exit:hover { background: rgba(239, 68, 68, 0.2); }
     
     .drive-car { filter: drop-shadow(0 4px 8px rgba(0,0,0,.4)); }
+    /* 2D-mode car: a green chevron on a soft halo disc (Hudhud/Google style),
+       rotates with heading. The disc is circular so rotation only turns the arrow. */
+    .car2d { position: relative; width: 40px; height: 40px; }
+    .car2d::before { content: ""; position: absolute; inset: 0; border-radius: 50%;
+      background: radial-gradient(circle, rgba(47,208,110,.35) 0%, rgba(47,208,110,0) 70%); }
+    .car2d::after { content: ""; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -60%);
+      width: 0; height: 0; border-left: 12px solid transparent; border-right: 12px solid transparent;
+      border-bottom: 24px solid #23c55e; filter: drop-shadow(0 2px 3px rgba(0,0,0,.5)); }
     .nav-pin {
       width: 28px; height: 28px; border-radius: 50% 50% 50% 0;
       transform: rotate(-45deg); border: 2.5px solid #fff;
@@ -228,14 +261,21 @@
 
   <div id="drive-ui">
     <div id="drive-banner" class="glass-panel-dark">
-      <span class="b-ic"></span>
-      <span class="b-dist"></span>
-      <span class="b-road"></span>
+      <div class="b-top">
+        <span class="b-ic"></span>
+        <div class="b-info"><span class="b-dist"></span><span class="b-road"></span></div>
+      </div>
+      <div class="b-then"><span>Then</span><span class="b-then-ic"></span></div>
     </div>
-    <div id="drive-speed" class="glass-panel"><b>0</b><span>km/h</span></div>
+    <div id="drive-speed">
+      <div class="limit"><b class="lim">–</b><span>km/h</span></div>
+      <div class="cur"><b>0</b><span>km/h</span></div>
+    </div>
     <div id="drive-bottom" class="glass-panel">
       <button class="pause" title="Pause / resume">⏸</button>
       <div><span class="big remain">–</span> <span class="muted dist">–</span><br><span class="muted eta">–</span></div>
+      <button class="mode" title="Switch 2D / 3D view">2D</button>
+      <button class="theme" title="Day / night">🌙</button>
       <button class="exit" title="Exit drive mode">✕</button>
     </div>
   </div>
@@ -249,7 +289,7 @@
   </div>
 
   <div id="controls">
-    <button id="btn-3d" class="on glass-panel">3D&nbsp;view</button>
+    <div id="btn-3d" class="glass-panel seg"><button data-m="2d">🗺️ 2D</button><button data-m="3d">⛰️ 3D</button></div>
     <button id="btn-dark" class="glass-panel" title="Neon night mode">🌙 Dark</button>
     <button id="btn-frame" class="glass-panel">Frame&nbsp;city</button>
     <button id="btn-north" class="glass-panel" title="Reset bearing to north">⌖ North</button>
@@ -448,7 +488,7 @@
           "fill-extrusion-color": bldgDayColor,
           "fill-extrusion-height": ["coalesce", ["get", "height"], 6],
           "fill-extrusion-base": ["coalesce", ["get", "base"], 0],
-          "fill-extrusion-opacity": 0.92,
+          "fill-extrusion-opacity": 1,
           "fill-extrusion-vertical-gradient": true,
         },
       },
@@ -698,16 +738,24 @@
     // camera tilts into the 3D HD view. Only fires when crossing the threshold,
     // so it never fights an in-progress zoom. The 3D button is a manual override.
     const btn3d = document.getElementById("btn-3d");
+    const segBtns = btn3d.querySelectorAll("button");
     let is3d = map.getPitch() > 5;
-    btn3d.classList.toggle("on", is3d);
+    // highlight whichever half matches the current view (no ambiguous single label);
+    // the GO button follows the same mode so it launches into what you're seeing
+    const syncBtn3d = () => {
+      segBtns.forEach((b) => b.classList.toggle("active", (b.dataset.m === "3d") === is3d));
+      const go = document.querySelector("#nav-panel .np-go");
+      if (go) go.textContent = `▶ GO — drive in ${is3d ? "3D" : "2D"}`;
+    };
+    syncBtn3d();
     const setMode = (want3d, ms) => {
       if (want3d === is3d) return;
       is3d = want3d;
-      btn3d.classList.toggle("on", is3d);
+      syncBtn3d();
       map.easeTo({ pitch: is3d ? 55 : 0, duration: ms });
     };
     map.on("zoom", () => setMode(map.getZoom() > SWITCH_Z, 400));
-    btn3d.onclick = () => setMode(!is3d, 500);
+    segBtns.forEach((b) => { b.onclick = () => setMode(b.dataset.m === "3d", 500); });
     document.getElementById("btn-frame").onclick = () => {
       map.fitBounds(dataBounds, { padding: 40, pitch: 0, maxZoom: 16 });
     };
@@ -774,7 +822,7 @@
       // read as real volumes, not glass boxes) — only the colour changes to cyan.
       set("buildings-3d", "fill-extrusion-color", dark ? bldgNeonColor : bldgDayColor);
       set("buildings-3d", "fill-extrusion-vertical-gradient", true);
-      set("buildings-3d", "fill-extrusion-opacity", dark ? 1 : 0.92);
+      set("buildings-3d", "fill-extrusion-opacity", 1); // solid in both themes — 0.92 let roads bleed through walls
       vis("buildings-edge", dark); // keep a faint neon rim, dialled down (see layer paint)
       updateBase(); // street basemap follows the theme (unless satellite is on)
       // sky only — keep the day sun so cyan walls stay lit/solid (flattening the
@@ -866,7 +914,7 @@
       const TH = 22; // deg — below this counts as "straight"
       const f = legs[0];
       const startBrg = bearingDeg(f.ge[0], f.ge[1]);
-      const M = [{ turn: "depart", instruction: `Head ${compassDir(startBrg)}${f.name ? " on " + f.name : ""}`, name: f.name, dist: 0, spd: f.spd }];
+      const M = [{ turn: "depart", instruction: `Head ${compassDir(startBrg)}${f.name ? " on " + f.name : ""}`, name: f.name, dist: 0, spd: f.spd, lim: f.lim }];
       let cur = M[0];
       for (let i = 1; i < legs.length; i++) {
         const prev = legs[i - 1], leg = legs[i], pg = prev.ge, lg = leg.ge;
@@ -879,7 +927,7 @@
         if (bigTurn || rename) {
           const c = classifyTurn(delta);
           const instruction = bigTurn ? `${c.text}${leg.name ? " onto " + leg.name : ""}` : `Continue onto ${leg.name}`;
-          cur = { turn: bigTurn ? c.turn : "continue", instruction, name: leg.name, dist: 0, spd: leg.spd };
+          cur = { turn: bigTurn ? c.turn : "continue", instruction, name: leg.name, dist: 0, spd: leg.spd, lim: leg.lim };
           M.push(cur);
         }
       }
@@ -970,42 +1018,114 @@
         const ed = edges[bE];
         const da = (n[ed[0] * 2] - bLng) ** 2 + (n[ed[0] * 2 + 1] - bLat) ** 2;
         const db = (n[ed[1] * 2] - bLng) ** 2 + (n[ed[1] * 2 + 1] - bLat) ** 2;
+        // Split the snapped edge AT the snap point so routing can start/end exactly
+        // here (partial-edge), not at the nearest node. geomTo0 = snap→endpoint0,
+        // geomTo1 = snap→endpoint1 (both begin at the snap point); len0/len1 are the
+        // partial-edge lengths in metres. Locate the segment the point lies on, then
+        // slice the full edge geometry around it.
+        const sp = [bLng, bLat], geom = this.fullGeom(bE);
+        let ks = 0, segBest = Infinity;
+        for (let k = 0; k < geom.length - 1; k++) {
+          const A = geom[k], B = geom[k + 1];
+          const ax = (sp[0] - A[0]) * mx, ay = sp[1] - A[1];
+          const dx = (B[0] - A[0]) * mx, dy = B[1] - A[1];
+          const l2 = dx * dx + dy * dy;
+          let t = l2 > 0 ? (ax * dx + ay * dy) / l2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const cx = ax - dx * t, cy = ay - dy * t, d2 = cx * cx + cy * cy;
+          if (d2 < segBest) { segBest = d2; ks = k; }
+        }
+        const geomTo1 = [sp, ...geom.slice(ks + 1)];              // snap → endpoint1 (a→b)
+        const geomTo0 = [sp, ...geom.slice(0, ks + 1).reverse()]; // snap → endpoint0 (b→a)
+        const lenOf = (arr) => { let s = 0; for (let i = 1; i < arr.length; i++) s += metersBetween(arr[i - 1], arr[i]); return s; };
         return { e: bE, lng: bLng, lat: bLat, node: da <= db ? ed[0] : ed[1],
-                 distM: Math.round(Math.sqrt(bestD2) * 111320) };
+                 distM: Math.round(Math.sqrt(bestD2) * 111320),
+                 geomTo0, geomTo1, len0: lenOf(geomTo0), len1: lenOf(geomTo1) };
       },
 
       // --- A* routing (Task 5) ---
       // Cost = travel time (len / class speed); service roads ×penalty so they're
       // used only for access, not through-routes. Heuristic = straight-line time
       // at the fastest class speed (admissible → shortest-time path).
+      // PARTIAL-EDGE routing: the trip begins/ends exactly at the snapped points
+      // (mid-way), not at the nearest node — otherwise every trip is padded by the
+      // walk to the nearest intersection (and can even set off the wrong way first).
+      // We drive the partial start edge to whichever endpoint the network needs,
+      // A* node→node in the middle, then the partial end edge to the destination.
+      // One-way rules are honoured on the partial edges too. A virtual GOAL node
+      // (-1) lets the heuristic aim at the destination POINT, not a node.
       route(sA, sB) {
         const g = this.graph, adj = this.adj, speed = this.speed, etaSpeed = this.etaSpeed;
-        const start = sA.node, goal = sB.node;
-        if (start === goal) return null;
-        const gx = g.nodes[goal * 2], gy = g.nodes[goal * 2 + 1];
         const maxSpeed = Math.max(...speed);
         const serviceIdx = g.classes.indexOf("service");
         const penalty = g.meta.service_penalty || 4;
+        const pB = [sB.lng, sB.lat], GOAL = -1;
+        const edA = g.edges[sA.e], edB = g.edges[sB.e];
+        const clsA = edA[3], clsB = edB[3], owA = edA[4], owB = edB[4];
+        const spdA = speed[clsA] || maxSpeed, spdB = speed[clsB] || maxSpeed;
+        const a0 = edA[0], a1 = edA[1], b0 = edB[0], b1 = edB[1];
+        const nameOf = (e) => { const ed = g.edges[e]; return ed[5] >= 0 ? g.names[ed[5]] : null; };
+        const mkLeg = (e, ge, len, dir) => { const cls = g.edges[e][3]; return { e, ge, len, cls, name: nameOf(e),
+          spd: etaSpeed[cls] || speed[cls] || maxSpeed, lim: Math.round((speed[cls] || maxSpeed) * 3.6),
+          w: g.wayids[e], dir }; };
+
+        // ---- same-edge: A and B on one edge, drive straight along it if oneway allows
+        if (sA.e === sB.e) {
+          const fwd = sA.len0 <= sB.len0;                 // A before B in the a→b order?
+          const dirOK = fwd ? (owB === 0 || owB === 1) : (owB === 0 || owB === 2);
+          if (dirOK) {
+            const gA = fwd ? sA.geomTo1 : sA.geomTo0, gB = fwd ? sB.geomTo1 : sB.geomTo0;
+            const mid = gA.slice(1, gA.length - (gB.length - 1)); // vertices strictly between A and B
+            const ge = [[sA.lng, sA.lat], ...mid, [sB.lng, sB.lat]];
+            const len = Math.abs(sB.len0 - sA.len0);
+            if (len < 1) return null;
+            const leg = mkLeg(sA.e, ge, len, fwd ? "Fwd" : "Back");
+            return { nodes: 2, coords: ge, distM: len, timeS: len / leg.spd,
+                     maneuvers: buildManeuvers([leg]), legWays: [{ w: String(leg.w), dir: leg.dir, len }] };
+          }
+          // wrong way on a one-way single edge → fall through and route around
+        }
+
         const h = (nid) => {
+          if (nid === GOAL) return 0;
           const x = g.nodes[nid * 2], y = g.nodes[nid * 2 + 1];
           const mx = Math.cos(y * Math.PI / 180);
-          const dx = (x - gx) * mx * 111320, dy = (y - gy) * 111320;
+          const dx = (x - pB[0]) * mx * 111320, dy = (y - pB[1]) * 111320;
           return Math.hypot(dx, dy) / maxSpeed;
         };
-        const gScore = new Map([[start, 0]]);
-        const came = new Map();
+        const gScore = new Map();
+        const came = new Map();          // node -> { prev, e }   (real edges)
+        const startPrefix = new Map();   // seed node -> { geom, len, dir }  partial start edge
         const closed = new Set();
         const open = new MinHeap();
-        open.push(start, h(start));
-        let found = false;
+        // seed the start-edge endpoint(s) reachable from the snap point (oneway-aware)
+        const seed = (node, geom, len, dir) => {
+          const gs = len / spdA;
+          if (gs < (gScore.get(node) ?? Infinity)) {
+            gScore.set(node, gs); startPrefix.set(node, { geom, len, dir });
+            open.push(node, gs + h(node));
+          }
+        };
+        if (owA === 0 || owA === 1) seed(a1, sA.geomTo1, sA.len1, "Fwd"); // drive A→endpoint1
+        if (owA === 0 || owA === 2) seed(a0, sA.geomTo0, sA.len0, "Back");// drive A→endpoint0
+        // end-edge endpoint(s) that can reach the destination point (oneway-aware)
+        const endAt = new Map();         // node -> { cost, geom, len, dir }
+        if (owB === 0 || owB === 1) endAt.set(b0, { cost: sB.len0 / spdB, geom: sB.geomTo0.slice().reverse(), len: sB.len0, dir: "Fwd" });
+        if (owB === 0 || owB === 2) endAt.set(b1, { cost: sB.len1 / spdB, geom: sB.geomTo1.slice().reverse(), len: sB.len1, dir: "Back" });
+
         while (open.size()) {
           const cur = open.pop();
-          if (cur === goal) { found = true; break; }
+          if (cur === GOAL) break;
           if (closed.has(cur)) continue;
           closed.add(cur);
+          const gc = gScore.get(cur);
+          if (endAt.has(cur)) {                    // virtual edge cur → GOAL (partial end edge)
+            const ng = gc + endAt.get(cur).cost;
+            if (ng < (gScore.get(GOAL) ?? Infinity)) {
+              gScore.set(GOAL, ng); came.set(GOAL, { prev: cur, e: -1 }); open.push(GOAL, ng);
+            }
+          }
           const nbrs = adj.get(cur);
           if (!nbrs) continue;
-          const gc = gScore.get(cur);
           for (const nb of nbrs) {
             if (closed.has(nb.to)) continue;
             const spd = speed[nb.cls] || maxSpeed;
@@ -1013,39 +1133,39 @@
             if (nb.cls === serviceIdx) cost *= penalty;
             const ng = gc + cost;
             if (ng < (gScore.get(nb.to) ?? Infinity)) {
-              gScore.set(nb.to, ng);
-              came.set(nb.to, { prev: cur, e: nb.e });
+              gScore.set(nb.to, ng); came.set(nb.to, { prev: cur, e: nb.e });
               open.push(nb.to, ng + h(nb.to));
             }
           }
         }
-        if (!found) return null; // unreachable
-        // reconstruct edge sequence (goal -> start), then reverse
+        if (!came.has(GOAL)) return null; // unreachable
+        // reconstruct: exit node → back to the seeded origin node
+        const exitNode = came.get(GOAL).prev;
+        const endInfo = endAt.get(exitNode);
         const seq = [];
-        for (let n = goal; came.has(n); ) { const c = came.get(n); seq.push({ e: c.e, from: c.prev }); n = c.prev; }
+        for (let n = exitNode; came.has(n); ) { const c = came.get(n); seq.push({ e: c.e, from: c.prev }); n = c.prev; }
+        const originNode = seq.length ? seq[seq.length - 1].from : exitNode;
+        const startInfo = startPrefix.get(originNode);
+        if (!startInfo || !endInfo) return null; // shouldn't happen; fail safe
         seq.reverse();
-        // build legs with geometry oriented along travel direction (needed for
-        // both stitching and per-junction bearings)
-        const legs = seq.map((s) => {
-          const ed = g.edges[s.e];
-          const ge = this.fullGeom(s.e);
-          if (s.from === ed[1]) ge.reverse();          // edge stored a->b, we travel b->a
-          // way id + travel direction (edge[0] is the way-forward start, so travelling
-          // FROM edge[0] = "Fwd" lanes, from edge[1] = "Back") — used to match HD lanes
-          return { e: s.e, ge, len: ed[2], cls: ed[3], name: ed[5] >= 0 ? g.names[ed[5]] : null,
-                   spd: etaSpeed[ed[3]] || speed[ed[3]] || maxSpeed,
-                   w: g.wayids[s.e], dir: s.from === ed[0] ? "Fwd" : "Back" };
-        });
-        // stitch coords + totals. REAL travel time uses etaSpeed (no service
-        // penalty) — the A* gScore is penalty-inflated and over-reports the ETA.
+        // legs = [start partial] + [middle real edges] + [end partial], all oriented
+        // along travel direction so stitching, bearings, and the lane guide agree.
+        const legs = [mkLeg(sA.e, startInfo.geom, startInfo.len, startInfo.dir)];
+        for (const s of seq) {
+          const ed = g.edges[s.e], ge = this.fullGeom(s.e);
+          if (s.from === ed[1]) ge.reverse();     // stored a→b, we travel b→a
+          legs.push(mkLeg(s.e, ge, ed[2], s.from === ed[0] ? "Fwd" : "Back"));
+        }
+        legs.push(mkLeg(sB.e, endInfo.geom, endInfo.len, endInfo.dir));
+        // stitch coords + totals. REAL travel time uses etaSpeed (no service penalty).
         const coords = []; let distM = 0, timeS = 0;
         for (const l of legs) {
-          const g2 = coords.length ? l.ge.slice(1) : l.ge; // drop shared vertex
-          for (const p of g2) coords.push(p);
+          for (let i = coords.length ? 1 : 0; i < l.ge.length; i++) coords.push(l.ge[i]); // drop shared vertex
           distM += l.len;
           timeS += l.len / (etaSpeed[l.cls] || speed[l.cls] || maxSpeed);
         }
-        return { nodes: seq.length + 1, coords, distM, timeS, maneuvers: buildManeuvers(legs),
+        if (distM < 1) return null;
+        return { nodes: seq.length + 2, coords, distM, timeS, maneuvers: buildManeuvers(legs),
                  legWays: legs.map((l) => ({ w: String(l.w), dir: l.dir, len: l.len })) };
       },
 
@@ -1139,9 +1259,21 @@
         layout: { "line-join": "round", "line-cap": "round" },
         paint: { "line-color": "#2f6bd6", "line-width": coreW, "line-opacity": 1 },
       });
+      // yellow overlay for the immediate upcoming-turn stretch (drive mode only),
+      // sits ON TOP of the blue core — like the Hudhud/Google turn highlight
+      map.addSource("nav-turn", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({
+        id: "nav-turn", type: "line", source: "nav-turn",
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": "#f5c518", "line-width": coreW, "line-opacity": 1 },
+      });
       styleRoute(darkOn); // match the current theme if route is created while dark
     };
-    const clearRoute = () => { if (map.getSource("nav-route")) map.getSource("nav-route").setData({ type: "FeatureCollection", features: [] }); };
+    const emptyFC = { type: "FeatureCollection", features: [] };
+    const clearRoute = () => {
+      if (map.getSource("nav-route")) map.getSource("nav-route").setData(emptyFC);
+      if (map.getSource("nav-turn")) map.getSource("nav-turn").setData(emptyFC);
+    };
 
     // full teardown: pins, route line, summary card, hint back to step 1
     const resetNav = () => {
@@ -1198,7 +1330,7 @@
           `<div class="np-eta">${fmtDur(r.timeS)}<small>(${fmtDist(r.distM)})</small></div>` +
           `${via ? `<div class="np-sub">via ${escapeHtml(via)}</div>` : ""}` +
           `<div class="np-sub">Arrive ~${clockAfter(r.timeS)}</div>` +
-          `<button class="np-go">▶ GO — drive in 3D</button></div>` +
+          `<button class="np-go">▶ GO — drive in ${is3d ? "3D" : "2D"}</button></div>` +
         `<div class="np-od">` +
           `<div class="row"><span class="dot a"></span><span class="name">${escapeHtml(aName)}</span>` +
             `<button class="np-swap" title="Swap start / destination">⇅</button></div>` +
@@ -1223,9 +1355,16 @@
     // speed) + bottom bar (remaining dist/time + arrival clock). Play/pause/exit.
     const driveUI = document.getElementById("drive-ui");
     const dBanner = document.getElementById("drive-banner");
-    const dSpeedEl = document.getElementById("drive-speed").querySelector("b");
+    const dSpeedEl = document.querySelector("#drive-speed .cur b");
+    const dLimitEl = document.querySelector("#drive-speed .limit b");
     const dBottom = document.getElementById("drive-bottom");
-    const PLAYBACK = 4, CAR_ZOOM = 18.2, CAR_PITCH = 68, LOOK_AHEAD_M = 32, TURN_EASE = 2.5;
+    // PLAYBACK = time compression (1 = real time). TURN_EASE = camera-bearing glide.
+    // Per-mode camera: 3D sits close behind the car; 2D is a tighter top-down chase.
+    const PLAYBACK = 1.0, TURN_EASE = 2.5;
+    const DRIVE_VIEW = { "3d": { pitch: 62, zoom: 19, look: 22 }, "2d": { pitch: 0, zoom: 17.8, look: 0 } };
+    // Turn slowdown: within TURN_SLOW_M of a real turn, ease the car down to
+    // TURN_SLOW_MIN of road speed so corners don't whip past.
+    const TURN_SLOW_M = 35, TURN_SLOW_MIN = 0.3;
 
     const metersBetween = (a, b) => {
       const R = 6371000, rad = Math.PI / 180;
@@ -1342,7 +1481,26 @@
       }
     };
 
-    const DRIVE = { active: false, raf: 0, paused: false, d: 0, total: 0, timeS: 0, carPos: null, carHeading: 0, last: 0, lastGuide: 0 };
+    const DRIVE = { active: false, raf: 0, paused: false, d: 0, total: 0, timeS: 0, carPos: null, carHeading: 0, last: 0, lastGuide: 0, mode: "3d", curSpeed: 0 };
+
+    // 2D flat car marker (a DOM arrow) — used instead of the three.js mesh when the
+    // driver flips to 2D nav mode during the trip.
+    let car2d = null;
+    const ensureCar2d = () => {
+      if (!car2d) { const el = document.createElement("div"); el.className = "car2d";
+        car2d = new maplibregl.Marker({ element: el, rotationAlignment: "map", anchor: "center" }); }
+      return car2d;
+    };
+    // Switch the follow-cam between 3D (mesh) and 2D (flat marker) live, mid-trip.
+    const setDriveMode = (mode) => {
+      DRIVE.mode = mode;
+      const b = document.getElementById("drive-bottom").querySelector(".mode");
+      if (b) b.textContent = mode === "3d" ? "3D" : "2D"; // shows the CURRENT view (tap toggles)
+      if (carLayer.car) carLayer.car.visible = (mode === "3d") && DRIVE.active;
+      if (mode === "2d") { if (DRIVE.carPos) ensureCar2d().setLngLat(DRIVE.carPos).setRotation(DRIVE.carHeading).addTo(map); }
+      else if (car2d) car2d.remove();
+      map.triggerRepaint();
+    };
 
     // exterior ring of a lane polygon (used to dedupe queried lane features)
     const ringOf = (g) => g.type === "Polygon" ? g.coordinates[0] : g.type === "MultiPolygon" ? g.coordinates[0][0] : null;
@@ -1355,7 +1513,10 @@
       const src = map.getSource("lane-guide");
       if (!src || !winWays || !winWays.length) return;
       const p = map.project(pos);
-      const box = [[p.x - 150, p.y - 240], [p.x + 150, p.y + 90]]; // generous; way-id match keeps it correct
+      // narrow, forward-only box: hugs the car's own driving lane(s) AHEAD (screen
+      // up = travel direction), so it no longer paints the full carriageway, the
+      // oncoming side, or the stretch behind the car.
+      const box = [[p.x - 80, p.y - 260], [p.x + 80, p.y + 20]];
       let feats = [];
       try { feats = map.queryRenderedFeatures(box, { layers: ["lanes", "lanes-hi"] }); } catch (_) {}
       const seen = new Set(), out = [];
@@ -1379,11 +1540,16 @@
       // hide (don't remove) the 3D car layer so its single WebGL renderer is reused
       DRIVE.carPos = null;
       if (carLayer.car) carLayer.car.visible = false;
+      if (car2d) car2d.remove();
       if (carLayerAdded) map.triggerRepaint(); // clear the last car frame
       clearLaneGuide();
+      if (map.getSource("nav-turn")) map.getSource("nav-turn").setData(emptyFC); // drop the yellow turn overlay
       driveUI.classList.remove("on");
       hideForDrive(false);
       togglePanel(true);
+      // restore the full route line (drive mode trimmed it to the road ahead)
+      if (NAV.lastRoute && map.getSource("nav-route"))
+        map.getSource("nav-route").setData({ type: "Feature", geometry: { type: "LineString", coordinates: NAV.lastRoute.coords } });
       if (NAV.lastRoute) { navSummary.classList.add("on"); fitRoute(NAV.lastRoute.coords); }
     };
 
@@ -1404,23 +1570,48 @@
         racc += lw.len;
       }
       let segIdx = 0, manPtr = 1, runPtr = 0;
-      const curRun = (d) => { while (runPtr < runs.length - 1 && d >= runs[runPtr].end) runPtr++; return runPtr; };
+      // all three pointers reset when d moves backwards (e.g. the ↺ restart) so the
+      // walk never gets stuck at the end of the route.
+      const curRun = (d) => { if (runPtr && d < runs[runPtr].start) runPtr = 0;
+        while (runPtr < runs.length - 1 && d >= runs[runPtr].end) runPtr++; return runPtr; };
+      // pure position sampler (does NOT move segIdx) — safe to call for arbitrary d
+      const posAt = (d) => {
+        let i = 0; while (i < pts.length - 2 && cum[i + 1] < d) i++;
+        const a = pts[i], b = pts[i + 1], segLen = (cum[i + 1] - cum[i]) || 1;
+        const t = Math.max(0, Math.min(1, (d - cum[i]) / segLen));
+        return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+      };
       const sampleAt = (d) => {
+        if (d < cum[segIdx]) segIdx = 0;
         while (segIdx < pts.length - 2 && cum[segIdx + 1] < d) segIdx++;
         const a = pts[segIdx], b = pts[segIdx + 1], segLen = (cum[segIdx + 1] - cum[segIdx]) || 1;
         const t = Math.max(0, Math.min(1, (d - cum[segIdx]) / segLen));
         return { pos: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], heading: bearingDeg(a, b) };
       };
-      const upcoming = (d) => { while (manPtr < mans.length - 1 && d >= turnAt[manPtr]) manPtr++; return manPtr; };
+      // slice the route polyline between two distances (for the yellow turn stretch)
+      const sliceRoute = (d0, d1) => {
+        if (d1 - d0 < 1) return null;
+        const out = [posAt(d0)];
+        for (let i = 0; i < pts.length; i++) if (cum[i] > d0 && cum[i] < d1) out.push(pts[i]);
+        out.push(posAt(d1));
+        return out.length >= 2 ? out : null;
+      };
+      const upcoming = (d) => { if (manPtr > 1 && d < turnAt[manPtr - 1]) manPtr = 1;
+        while (manPtr < mans.length - 1 && d >= turnAt[manPtr]) manPtr++; return manPtr; };
       const updateHud = (mi) => {
-        const man = mans[mi];
+        const man = mans[mi], isFinished = DRIVE.d >= total;
         dBanner.querySelector(".b-ic").textContent = TURN_GLYPH[man.turn] || "↑";
         dBanner.querySelector(".b-dist").textContent = fmtDist(Math.max(0, turnAt[mi] - DRIVE.d));
-        
-        const isFinished = DRIVE.d >= total;
         dBanner.querySelector(".b-road").textContent = isFinished ? "Arrived at destination" : (man.name || (man.turn === "arrive" ? "Arrive at destination" : ""));
-        dSpeedEl.textContent = isFinished ? "0" : Math.round((mans[Math.max(0, mi - 1)].spd || 8) * 3.6);
-        
+        // "Then <arrow>" — preview the maneuver after the upcoming one
+        const then = mans[mi + 1], thenEl = dBanner.querySelector(".b-then");
+        if (then && !isFinished) { dBanner.querySelector(".b-then-ic").textContent = TURN_GLYPH[then.turn] || "↑"; thenEl.classList.add("on"); }
+        else thenEl.classList.remove("on");
+        // speed cluster: current (eased) speed + posted limit of the road we're on
+        dSpeedEl.textContent = isFinished ? "0" : Math.round(DRIVE.curSpeed * 3.6);
+        const lim = mans[Math.max(0, mi - 1)].lim;
+        dLimitEl.textContent = lim ? lim : "–";
+
         const remainT = Math.max(0, DRIVE.timeS * (1 - DRIVE.d / total));
         dBottom.querySelector(".remain").textContent = fmtDur(remainT);
         dBottom.querySelector(".dist").textContent = fmtDist(Math.max(0, total - DRIVE.d));
@@ -1431,9 +1622,18 @@
         if (!DRIVE.last) DRIVE.last = ts;
         let dt = (ts - DRIVE.last) / 1000; DRIVE.last = ts; if (dt > 0.1) dt = 0.1;
         const mi = upcoming(DRIVE.d);
+        // cruise at the road's posted speed (so the speedometer sits near the limit),
+        // falling back to the effective speed only if no posted value is known
+        const cm = mans[Math.max(0, mi - 1)];
+        const posted = cm.lim ? cm.lim / 3.6 : (cm.spd || 8);
+        // slow into a real turn: scale down as we approach the next turning maneuver
+        const isTurn = /left|right|uturn/.test(mans[mi] ? mans[mi].turn : "");
+        const toTurn = turnAt[mi] - DRIVE.d;
+        const slow = (isTurn && toTurn < TURN_SLOW_M)
+          ? TURN_SLOW_MIN + (1 - TURN_SLOW_MIN) * Math.max(0, toTurn) / TURN_SLOW_M : 1;
+        DRIVE.curSpeed = posted * slow;
         if (!DRIVE.paused) {
-          const spd = mans[Math.max(0, mi - 1)].spd || 8;
-          DRIVE.d += spd * PLAYBACK * dt;
+          DRIVE.d += DRIVE.curSpeed * PLAYBACK * dt;
           if (DRIVE.d > total) DRIVE.d = total;
         }
         const s = sampleAt(DRIVE.d);
@@ -1441,11 +1641,28 @@
         // ease the camera bearing toward the heading so turns glide instead of snapping
         const diff = ((s.heading - DRIVE.camBearing + 540) % 360) - 180;
         DRIVE.camBearing = (DRIVE.camBearing + diff * Math.min(1, dt * TURN_EASE) + 360) % 360;
-        map.jumpTo({ center: moveAlong(s.pos, DRIVE.camBearing, LOOK_AHEAD_M), bearing: DRIVE.camBearing, pitch: CAR_PITCH, zoom: CAR_ZOOM });
+        const V = DRIVE_VIEW[DRIVE.mode];
+        map.jumpTo({ center: moveAlong(s.pos, DRIVE.camBearing, V.look), bearing: DRIVE.camBearing, pitch: V.pitch, zoom: V.zoom });
+        if (DRIVE.mode === "2d" && car2d) car2d.setLngLat(s.pos).setRotation(s.heading);
+        // show only the road AHEAD — trim the blue route to the remaining portion so
+        // the already-driven stretch behind the car disappears (like real nav)
+        const rsrc = map.getSource("nav-route");
+        if (rsrc) { const rem = sliceRoute(DRIVE.d, total);
+          rsrc.setData(rem ? { type: "Feature", geometry: { type: "LineString", coordinates: rem } } : emptyFC); }
+        // paint the immediate upcoming-turn stretch yellow (car → next turn), rest blue
+        const tsrc = map.getSource("nav-turn");
+        if (tsrc) {
+          const nearTurn = mans[mi] && /left|right|uturn/.test(mans[mi].turn) && (turnAt[mi] - DRIVE.d) < 160;
+          const seg = nearTurn ? sliceRoute(DRIVE.d, turnAt[mi]) : null;
+          tsrc.setData(seg ? { type: "Feature", geometry: { type: "LineString", coordinates: seg } } : { type: "FeatureCollection", features: [] });
+        }
         if (ts - DRIVE.lastGuide > 180) { // throttle lane highlight; window = current way + one ahead
           DRIVE.lastGuide = ts;
           const rp = curRun(DRIVE.d);
-          const winWays = [runs[rp], runs[rp + 1]].filter(Boolean).map((r) => ({ w: r.w, dir: r.dir }));
+          // only pre-light the NEXT way when we're close to it — otherwise a
+          // diverging side road lights up green hundreds of metres early
+          const nearNext = runs[rp] && (runs[rp].end - DRIVE.d) < 70;
+          const winWays = [runs[rp], nearNext ? runs[rp + 1] : null].filter(Boolean).map((r) => ({ w: r.w, dir: r.dir }));
           updateLaneGuide(s.pos, winWays);
         }
         updateHud(mi);
@@ -1463,16 +1680,32 @@
       driveUI.classList.add("on");
       dBottom.querySelector(".pause").textContent = "⏸";
       setupCarLayer(s0.pos, s0.heading);
-      map.jumpTo({ center: moveAlong(s0.pos, s0.heading, LOOK_AHEAD_M), bearing: s0.heading, pitch: CAR_PITCH, zoom: CAR_ZOOM });
+      setDriveMode(is3d ? "3d" : "2d"); // launch in whatever mode the map is currently showing
+      dBottom.querySelector(".theme").textContent = darkOn ? "☀️" : "🌙";
+      const V0 = DRIVE_VIEW[DRIVE.mode];
+      map.jumpTo({ center: moveAlong(s0.pos, s0.heading, V0.look), bearing: s0.heading, pitch: V0.pitch, zoom: V0.zoom });
       DRIVE.raf = requestAnimationFrame(tick);
     };
 
     dBottom.querySelector(".pause").onclick = () => {
       if (!DRIVE.active) return;
-      DRIVE.paused = !DRIVE.paused; DRIVE.last = 0;
+      DRIVE.last = 0;
+      if (DRIVE.d >= DRIVE.total) {           // arrived → this button is "↺ restart"
+        DRIVE.d = 0; DRIVE.paused = false;
+        dBottom.querySelector(".pause").textContent = "⏸";
+        return;
+      }
+      DRIVE.paused = !DRIVE.paused;
       dBottom.querySelector(".pause").textContent = DRIVE.paused ? "▶" : "⏸";
     };
     dBottom.querySelector(".exit").onclick = stopDrive;
+    // switch 2D / 3D live during the trip
+    dBottom.querySelector(".mode").onclick = () => setDriveMode(DRIVE.mode === "3d" ? "2d" : "3d");
+    // switch day / night live during the trip (drives the same global theme)
+    dBottom.querySelector(".theme").onclick = () => {
+      btnDark.onclick();
+      dBottom.querySelector(".theme").textContent = darkOn ? "☀️" : "🌙";
+    };
 
     const computeRoute = () => {
       const [a, b] = NAV.points;
@@ -1480,8 +1713,8 @@
       const r = NAV.route(a.snap, b.snap);
       const ms = (performance.now() - t0).toFixed(1);
       if (!r) { navHint.textContent = "⚠ No route found between those points"; navSummary.classList.remove("on"); togglePanel(false); console.warn("[nav] no route"); return; }
-      // connect the mid-edge snapped points to the routed node path
-      const coords = [[a.snap.lng, a.snap.lat], ...r.coords, [b.snap.lng, b.snap.lat]];
+      // route() already begins/ends exactly at the snapped points (partial edges)
+      const coords = r.coords;
       ensureRouteLayer();
       map.getSource("nav-route").setData({ type: "Feature", geometry: { type: "LineString", coordinates: coords } });
       showSummary(r);
