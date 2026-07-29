@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: hdmap-api
+    env: docker
+    plan: free
+    branch: main
+    port: 8100

@@ -1,0 +1,8 @@
+node_modules
+.npm
+Dockerfile
+.dockerignore
+.git
+.gitignore
+.DS_Store
+*.py

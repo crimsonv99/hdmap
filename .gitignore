@@ -1,3 +1,6 @@
+# Secrets — API keys loaded at runtime by api.mjs. Never commit.
+keys.json
+
 # Baker intermediates — big, regenerable. Never commit.
 build/
 node_modules/
