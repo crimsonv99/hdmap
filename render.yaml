@@ -1,7 +1,12 @@
 services:
   - type: web
     name: hdmap-api
-    env: docker
+    runtime: docker
     plan: free
-    branch: main
-    port: 8100
+    branch: mvp-3d-map
+    envVars:
+      # Set the actual value in the Render dashboard (Environment tab) — a JSON
+      # object of API keys, e.g. {"DEMO_KEY_123":{"usage":0,"limit":100000}}.
+      # sync:false keeps the secret out of this file / git.
+      - key: API_KEYS
+        sync: false

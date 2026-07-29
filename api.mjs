@@ -22,12 +22,23 @@ let apiKeys = {};
 const keysPath = path.join(__dirname, 'keys.json');
 
 async function loadKeys() {
+  // Prefer the API_KEYS env var (Render dashboard / Secret File) so the secret
+  // never has to be committed. Fall back to a local keys.json for dev.
+  if (process.env.API_KEYS) {
+    try {
+      apiKeys = JSON.parse(process.env.API_KEYS);
+      console.log('[API] Loaded API Keys from env (API_KEYS)');
+      return;
+    } catch (err) {
+      console.error('[API] API_KEYS env var is not valid JSON', err);
+    }
+  }
   try {
     const data = await fs.readFile(keysPath, 'utf8');
     apiKeys = JSON.parse(data);
-    console.log('[API] Loaded API Keys');
+    console.log('[API] Loaded API Keys from keys.json');
   } catch (err) {
-    console.error('[API] Failed to load keys.json', err);
+    console.error('[API] No API_KEYS env var and failed to load keys.json', err);
   }
 }
 loadKeys();
