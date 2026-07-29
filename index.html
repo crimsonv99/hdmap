@@ -1014,6 +1014,35 @@
       let currentIntersections = intersectionsGeojson; // kept for node (intersection) editing
       let currentBuildings = buildingsGeojson; // kept for building (height) editing
 
+      // ---- service-road display join --------------------------------------
+      // osm2streets lane polygons carry osm_way_ids but not the OSM `service`
+      // tag, so we classify highway=service ways from the raw road lines
+      // (alley vs plain private) and stamp `svc` onto each matching lane. Purely
+      // for display (light-grey + white border for private, tan + dashed for
+      // alley); routing/editing are untouched. Rebuilt on every live reload
+      // since the road set changes with the viewport.
+      const _wayIds = (v) => Array.isArray(v) ? v.map(Number)
+        : (String(v ?? "").match(/\d+/g) || []).map(Number);
+      let svcByWay = new Map();
+      const rebuildSvc = (roadsFC) => {
+        const m = new Map();
+        for (const f of (roadsFC?.features || [])) {
+          const p = f.properties || {};
+          if (p.highway === "service") m.set(String(p.osm_way_id), p.service === "alley" ? "alley" : "private");
+        }
+        svcByWay = m;
+      };
+      const stampSvc = (lanesFC) => {
+        for (const f of (lanesFC?.features || [])) {
+          const p = f.properties; if (!p) continue;
+          delete p.svc;
+          for (const w of _wayIds(p.osm_way_ids)) { const k = svcByWay.get(String(w)); if (k) { p.svc = k; break; } }
+        }
+        return lanesFC;
+      };
+      rebuildSvc(rawRoadsGeojson);
+      stampSvc(lanesGeojson);
+
       // Visual gap between neighbouring buildings: shrink each footprint slightly
       // toward its own centroid so touching blocks read as separate. This is a
       // RENDER-ONLY transform — the true geometry stays in currentBuildings and in
@@ -1080,13 +1109,24 @@
       // overpass fully covers the road (and its markings) beneath it.
       const LYR = ["coalesce", ["get", "layer"], 0];
       const sortKey = ["coalesce", ["get", "layer"], 0]; // fine-order within a band
-      const laneColor = [
+      const laneTypeColor = [
         "match", ["get", "type"],
         "Driving", "#5b6270", "Parking", "#494f5b", "Sidewalk", "#8a90a0",
         "Footway", "#8a90a0", "Shoulder", "#40454f", "Biking", "#2f6b4f",
         "Bus", "#6b3a3a", "SharedLeftTurn", "#6b5f3a", "LightRail", "#5a4a6b",
         "#565c68",
       ];
+      // highway=service roads read apart from public roads: PRIVATE service in a
+      // light grey (with a bold white border, added below) and an ALLEY
+      // (service=alley — narrow Hanoi ngõ/hẻm) in a warm tan with a dashed rim.
+      // `svc` is stamped onto the lanes from the raw road tags (see stampSvc).
+      const svcTint = (base, alley, priv) => [
+        "case",
+        ["all", ["==", ["get", "type"], "Driving"], ["==", ["get", "svc"], "alley"]], alley,
+        ["all", ["==", ["get", "type"], "Driving"], ["==", ["get", "svc"], "private"]], priv,
+        base,
+      ];
+      const laneColor = svcTint(laneTypeColor, "#7a6b58", "#cfd3d9");
       const markColor = [
         "match", ["get", "type"],
         "center line", "#e8c84a", "vehicle stop line", "#ffffff",
@@ -1138,6 +1178,29 @@
             ["in", "right", ["to-string", ["get", "allowed_turns"]]]],
           layout: { "fill-sort-key": sortKey },
           paint: { "fill-color": "#c9772e", "fill-opacity": 0.55 }
+        },
+        {
+          // alley (service=alley): dashed light rim — "narrow, not a car road"
+          id: "lanes-alley" + sfx, type: "line", source: "lanes",
+          filter: ["all", flt, ["==", ["get", "svc"], "alley"], ["==", ["get", "type"], "Driving"]],
+          layout: { "line-sort-key": sortKey, "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-color": "#d8c9a8",
+            "line-width": ["interpolate", ["linear"], LYR, 0, 0.8, 1, 1.4],
+            "line-dasharray": [2, 2],
+            "line-opacity": 0.9,
+          }
+        },
+        {
+          // private service road: bold white border around the light-grey surface
+          id: "lanes-service" + sfx, type: "line", source: "lanes",
+          filter: ["all", flt, ["==", ["get", "svc"], "private"], ["==", ["get", "type"], "Driving"]],
+          layout: { "line-sort-key": sortKey, "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-color": "#ffffff",
+            "line-width": ["interpolate", ["linear"], LYR, 0, 1.2, 1, 2.2],
+            "line-opacity": 0.95,
+          }
         },
         {
           id: "markings" + sfx, type: "fill", source: "markings", filter: flt,
@@ -1533,7 +1596,7 @@
       const parseWayId = (f) => idList(f.properties.osm_way_ids)[0];
 
       // layer toggles (highlight layers hl-* are declared in the style above)
-      bind("t-lanes", "lanes", "lanes-edge", "lanes-hi", "lanes-edge-hi");
+      bind("t-lanes", "lanes", "lanes-edge", "lanes-hi", "lanes-edge-hi", "lanes-alley", "lanes-alley-hi", "lanes-service", "lanes-service-hi");
       bind("t-inter", "intersections", "inter-edge", "inter-signal");
       bind("t-mark", "markings", "markings-hi");
       bind("t-turn", "turn-left", "turn-right", "turn-arrows",
@@ -1814,6 +1877,8 @@
           fetch(`data/green.geojson?v=${v}`).then((r) => r.json()).catch(() => null),
           fetch(`data/meta.json?v=${v}`).then((r) => r.json()).catch(() => null),
         ]);
+        if (rw) rebuildSvc(rw);   // refresh service-road classification for this area
+        stampSvc(ln);             // …then tag the new lanes (alley/private display)
         map.getSource("lanes").setData(ln);
         map.getSource("markings").setData(mk);
         map.getSource("intersections").setData(it);
