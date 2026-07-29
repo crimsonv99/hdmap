@@ -197,12 +197,8 @@
     .drive-car { filter: drop-shadow(0 4px 8px rgba(0,0,0,.4)); }
     /* 2D-mode car: a green chevron on a soft halo disc (Hudhud/Google style),
        rotates with heading. The disc is circular so rotation only turns the arrow. */
-    .car2d { position: relative; width: 40px; height: 40px; }
-    .car2d::before { content: ""; position: absolute; inset: 0; border-radius: 50%;
-      background: radial-gradient(circle, rgba(47,208,110,.35) 0%, rgba(47,208,110,0) 70%); }
-    .car2d::after { content: ""; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -60%);
-      width: 0; height: 0; border-left: 12px solid transparent; border-right: 12px solid transparent;
-      border-bottom: 24px solid #23c55e; filter: drop-shadow(0 2px 3px rgba(0,0,0,.5)); }
+    .car2d { width: 48px; height: 48px; filter: drop-shadow(0 3px 6px rgba(0,0,0,.6)); }
+    .car2d svg { display: block; }
     .nav-pin {
       width: 28px; height: 28px; border-radius: 50% 50% 50% 0;
       transform: rotate(-45deg); border: 2.5px solid #fff;
@@ -962,6 +958,9 @@
         const etaFallback = ETA_SPEED_KMH.residential / 3.6;
         this.etaSpeed = g.classes.map((c, i) =>
           Math.min(this.speed[i], (ETA_SPEED_KMH[c] || ETA_SPEED_KMH.residential) / 3.6) || etaFallback);
+        // per-EDGE assigned speed (m/s), Valhalla-style — set by the baker. Preferred
+        // over the per-class speed for routing cost, ETA, and the drive HUD limit.
+        this.edgeSpeed = g.edge_speeds ? g.edge_speeds.map((k) => k / 3.6) : null;
         // build oneway-aware adjacency: node index -> outgoing edges
         const adj = new Map();
         const link = (from, to, e, len, cls) => {
@@ -1054,19 +1053,24 @@
       // One-way rules are honoured on the partial edges too. A virtual GOAL node
       // (-1) lets the heuristic aim at the destination POINT, not a node.
       route(sA, sB) {
-        const g = this.graph, adj = this.adj, speed = this.speed, etaSpeed = this.etaSpeed;
-        const maxSpeed = Math.max(...speed);
+        const g = this.graph, adj = this.adj, speed = this.speed, edgeSpeed = this.edgeSpeed;
+        // per-edge assigned speed (m/s) when available, else per-class free-flow
+        const ETA_FACTOR = 0.85; // realistic urban average as a fraction of the limit
+        let maxSpeed = 0;
+        if (edgeSpeed) { for (const v of edgeSpeed) if (v > maxSpeed) maxSpeed = v; }
+        else { for (const v of speed) if (v > maxSpeed) maxSpeed = v; }
+        const es = (e, cls) => (edgeSpeed ? edgeSpeed[e] : (speed[cls] || maxSpeed));
         const serviceIdx = g.classes.indexOf("service");
         const penalty = g.meta.service_penalty || 4;
         const pB = [sB.lng, sB.lat], GOAL = -1;
         const edA = g.edges[sA.e], edB = g.edges[sB.e];
         const clsA = edA[3], clsB = edB[3], owA = edA[4], owB = edB[4];
-        const spdA = speed[clsA] || maxSpeed, spdB = speed[clsB] || maxSpeed;
+        const spdA = es(sA.e, clsA), spdB = es(sB.e, clsB);
         const a0 = edA[0], a1 = edA[1], b0 = edB[0], b1 = edB[1];
         const nameOf = (e) => { const ed = g.edges[e]; return ed[5] >= 0 ? g.names[ed[5]] : null; };
-        const mkLeg = (e, ge, len, dir) => { const cls = g.edges[e][3]; return { e, ge, len, cls, name: nameOf(e),
-          spd: etaSpeed[cls] || speed[cls] || maxSpeed, lim: Math.round((speed[cls] || maxSpeed) * 3.6),
-          w: g.wayids[e], dir }; };
+        const mkLeg = (e, ge, len, dir) => { const cls = g.edges[e][3], posted = es(e, cls);
+          return { e, ge, len, cls, name: nameOf(e),
+            spd: posted * ETA_FACTOR, lim: Math.round(posted * 3.6), w: g.wayids[e], dir }; };
 
         // ---- same-edge: A and B on one edge, drive straight along it if oneway allows
         if (sA.e === sB.e) {
@@ -1128,7 +1132,7 @@
           if (!nbrs) continue;
           for (const nb of nbrs) {
             if (closed.has(nb.to)) continue;
-            const spd = speed[nb.cls] || maxSpeed;
+            const spd = es(nb.e, nb.cls);
             let cost = nb.len / spd;
             if (nb.cls === serviceIdx) cost *= penalty;
             const ng = gc + cost;
@@ -1157,12 +1161,13 @@
           legs.push(mkLeg(s.e, ge, ed[2], s.from === ed[0] ? "Fwd" : "Back"));
         }
         legs.push(mkLeg(sB.e, endInfo.geom, endInfo.len, endInfo.dir));
-        // stitch coords + totals. REAL travel time uses etaSpeed (no service penalty).
+        // stitch coords + totals. REAL travel time uses each leg's effective speed
+        // (per-edge limit × ETA_FACTOR), no service penalty.
         const coords = []; let distM = 0, timeS = 0;
         for (const l of legs) {
           for (let i = coords.length ? 1 : 0; i < l.ge.length; i++) coords.push(l.ge[i]); // drop shared vertex
           distM += l.len;
-          timeS += l.len / (etaSpeed[l.cls] || speed[l.cls] || maxSpeed);
+          timeS += l.len / l.spd;
         }
         if (distM < 1) return null;
         return { nodes: seq.length + 2, coords, distM, timeS, maneuvers: buildManeuvers(legs),
@@ -1365,6 +1370,10 @@
     // Turn slowdown: within TURN_SLOW_M of a real turn, ease the car down to
     // TURN_SLOW_MIN of road speed so corners don't whip past.
     const TURN_SLOW_M = 35, TURN_SLOW_MIN = 0.3;
+    // The route rides the OSM centerline (between both directions). Shift the driven
+    // path to the RIGHT of travel so the car sits in its own lane, not on the median
+    // — Vietnam drives on the right. ~a lane and a half off centre reads well.
+    const LANE_OFFSET_M = 2.5;
 
     const metersBetween = (a, b) => {
       const R = 6371000, rad = Math.PI / 180;
@@ -1376,6 +1385,16 @@
       const rad = Math.PI / 180;
       return [lng + (distM * Math.sin(headingDeg * rad)) / (111320 * Math.cos(lat * rad)),
               lat + (distM * Math.cos(headingDeg * rad)) / 111320];
+    };
+    // Shift a polyline `distM` to the RIGHT of its travel direction (per-vertex,
+    // using the local heading) so the driven path sits in the right-hand lane
+    // rather than on the road centerline.
+    const offsetRight = (coords, distM) => {
+      if (!distM || coords.length < 2) return coords;
+      return coords.map((c, i) => {
+        const a = coords[Math.max(0, i - 1)], b = coords[Math.min(coords.length - 1, i + 1)];
+        return moveAlong(c, bearingDeg(a, b) + 90, distM); // +90° = to the right of travel
+      });
     };
     // ---- true-3D car (three.js) ------------------------------------------------
     // A real volumetric mesh rendered INTO MapLibre's GL context via a custom layer,
@@ -1487,8 +1506,17 @@
     // driver flips to 2D nav mode during the trip.
     let car2d = null;
     const ensureCar2d = () => {
-      if (!car2d) { const el = document.createElement("div"); el.className = "car2d";
-        car2d = new maplibregl.Marker({ element: el, rotationAlignment: "map", anchor: "center" }); }
+      if (!car2d) {
+        const el = document.createElement("div"); el.className = "car2d";
+        // bold blue nav chevron with a white outline + halo — high contrast on both
+        // the light and dark basemaps (the old green-on-dark arrow was hard to see)
+        el.innerHTML =
+          '<svg width="48" height="48" viewBox="0 0 48 48">' +
+          '<circle cx="24" cy="24" r="22" fill="rgba(47,107,214,0.22)"/>' +
+          '<path d="M24 5 L38 41 L24 32 L10 41 Z" fill="#2f6bd6" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"/>' +
+          '</svg>';
+        car2d = new maplibregl.Marker({ element: el, rotationAlignment: "map", anchor: "center" });
+      }
       return car2d;
     };
     // Switch the follow-cam between 3D (mesh) and 2D (flat marker) live, mid-trip.
@@ -1555,7 +1583,9 @@
 
     const startDrive = (r) => {
       if (!r || !r.coords || r.coords.length < 2) return;
-      const pts = r.coords, cum = [0];
+      // drive the lane-offset path (car + camera + drawn route all follow it, so
+      // they stay consistent). Planning view keeps the centerline.
+      const pts = offsetRight(r.coords, LANE_OFFSET_M), cum = [0];
       for (let i = 1; i < pts.length; i++) cum[i] = cum[i - 1] + metersBetween(pts[i - 1], pts[i]);
       const total = cum[cum.length - 1] || 1;
       const mans = r.maneuvers, turnAt = []; let acc = 0;
