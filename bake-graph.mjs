@@ -43,6 +43,41 @@ const SPEED_KMH = {
   secondary_link: 32, tertiary_link: 28,
 };
 
+// ============================================================================
+// Valhalla-style per-edge speed assignment (adapted from valhalla/valhalla's
+// lua/graph.lua + src/mjolnir/{pbfgraphparser,graphenhancer,speed_assigner}).
+// Priority per edge:  tagged OSM maxspeed (rough-surface reduced)  >  urban/rural
+// class default (by a simplified road-density "urban" flag)  >  ramp/roundabout/
+// service adjustments.  Result is stored per edge in km/h (data/graph.json
+// .edge_speeds), so the router + drive HUD use a real per-road limit instead of a
+// single per-class number. NOTE simplifications vs Valhalla: no country/state
+// config, no live/predicted traffic, no separate truck speed, and a coarse
+// grid-based density rather than the full per-node density model.
+// ----------------------------------------------------------------------------
+// road_class 0..7 (motorway .. service/other); rural + urban baselines (kph)
+const ROAD_CLASS = { motorway:0, motorway_link:0, trunk:1, trunk_link:1,
+  primary:2, primary_link:2, secondary:3, secondary_link:3, tertiary:4, tertiary_link:4,
+  busway:4, unclassified:5, residential:6, living_street:6, service:7, ladder:7, elevator:7 };
+const RURAL_KPH = [105, 90, 75, 60, 50, 40, 35, 25];
+const URBAN_KPH = [ 89, 73, 57, 49, 40, 35, 30, 20];
+const MAX_ASSUMED = 120;   // sanity cap (kph)
+const URBAN_ROAD_M = 18000; // road-metres within a ~1km² neighbourhood ⇒ "urban"
+
+// normalize any maxspeed-family value to kph (mph→kph, none/walk sentinels, junk<10 dropped)
+const normSpeed = (v) => {
+  if (v == null) return null;
+  v = String(v).trim().toLowerCase();
+  if (v === "none") return MAX_ASSUMED;
+  if (v === "walk") return 5;
+  const m = v.match(/(\d+(?:\.\d+)?)\s*(mph|kmh|km\/h|kph)?/);
+  if (!m) return null;
+  let n = parseFloat(m[1]);
+  if (m[2] === "mph") n = Math.round(n * 1.609344);
+  return n >= 10 ? n : null;
+};
+const taggedSpeed = (t) => normSpeed(t.maxspeed) ?? normSpeed(t["maxspeed:forward"]) ?? normSpeed(t["maxspeed:backward"]);
+const isRough = (t) => !!t.surface && /unpaved|gravel|ground|dirt|sand|compacted|fine_gravel|earth|mud|grass|cobblestone|\bsett\b|pebblestone/.test(t.surface);
+
 // ---- 1. filter highways to XML (preserves <nd ref> connectivity) ----
 console.log("filtering highways with osmium…");
 execFileSync("osmium", ["tags-filter", PBF, "w/highway", "-o", TMP, "--overwrite"], { stdio: "inherit" });
@@ -102,6 +137,8 @@ const onewayCode = (t) => {
 // ---- 5. split ways into edges ----
 const edges = [];
 const wayids = []; // parallel to edges: OSM way id each edge came from (as number)
+const edgeMid = [];  // parallel: [lon,lat] midpoint (for density)
+const edgeTags = []; // parallel: source way's tag object (for speed assignment)
 let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity;
 for (const w of roadWays) {
   const o = onewayCode(w.tags), c = getClass(w.tags.highway), nm = getName(w.tags.name);
@@ -121,6 +158,8 @@ for (const w of roadWays) {
       for (let k = 1; k < seg.length-1; k++) interior.push(r6(nodeLon.get(seg[k])), r6(nodeLat.get(seg[k])));
       edges.push([ai, bi, Math.max(1, Math.round(len)), c, o, nm, ...interior]);
       wayids.push(wid);
+      edgeMid.push([(nodeLon.get(a)+nodeLon.get(b))/2, (nodeLat.get(a)+nodeLat.get(b))/2]);
+      edgeTags.push(w.tags);
       for (const id of [a,b]) {
         const x = nodeLon.get(id), y = nodeLat.get(id);
         if (x<minx)minx=x; if (x>maxx)maxx=x; if (y<miny)miny=y; if (y>maxy)maxy=y;
@@ -132,19 +171,58 @@ for (const w of roadWays) {
 const nodeCount = nodeXY.length/2;
 console.log(`graph: ${nodeCount} nodes, ${edges.length} edges, ${classes.length} classes, ${names.length} names`);
 
+// ---- 5b. per-edge speed (Valhalla-style) ----------------------------------
+// density grid: total road length per ~330m cell → urban if the 3×3 neighbourhood
+// (~1km²) exceeds URBAN_ROAD_M (Valhalla's "density>8 ⇒ urban", simplified).
+const CELL = 0.003;
+const cellKey = (lon, lat) => Math.floor(lon / CELL) + "," + Math.floor(lat / CELL);
+const cellLen = new Map();
+for (let e = 0; e < edges.length; e++) {
+  const k = cellKey(edgeMid[e][0], edgeMid[e][1]);
+  cellLen.set(k, (cellLen.get(k) || 0) + edges[e][2]);
+}
+const hoodLen = (lon, lat) => {
+  const cx = Math.floor(lon / CELL), cy = Math.floor(lat / CELL); let s = 0;
+  for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) s += cellLen.get((cx + dx) + "," + (cy + dy)) || 0;
+  return s;
+};
+let nTagged = 0, nUrban = 0;
+const edge_speeds = edges.map((ed, e) => {
+  const t = edgeTags[e], clsName = classes[ed[3]], rc = ROAD_CLASS[clsName] ?? 7;
+  let sp;
+  const tag = taggedSpeed(t);
+  if (tag != null) {                                   // (a) tagged maxspeed wins
+    nTagged++; sp = tag;
+    if (isRough(t)) sp = sp >= 50 ? sp - 10 : sp > 15 ? sp - 5 : sp;
+  } else {                                             // (b) class default, urban-adjusted
+    const urban = hoodLen(edgeMid[e][0], edgeMid[e][1]) > URBAN_ROAD_M;
+    if (urban) nUrban++;
+    sp = urban ? URBAN_KPH[rc] : RURAL_KPH[rc];
+    if (/_link$/.test(clsName)) sp = Math.round(sp * 0.85); // ramps/links
+    if (isRough(t)) sp = Math.round(sp * 0.5);
+  }
+  if (t.junction === "roundabout") sp = Math.round(sp * 0.5);
+  if (clsName === "living_street") sp = Math.min(sp, 20);
+  if (clsName === "service") sp = Math.min(sp, 25);
+  return Math.max(5, Math.min(MAX_ASSUMED, Math.round(sp)));
+});
+console.log(`speeds: ${nTagged} tagged, ${nUrban} urban-default, ${edges.length - nTagged - nUrban} rural-default`);
+
 // ---- 6. emit ----
 const graph = {
   meta: {
     bbox: [r6(minx), r6(miny), r6(maxx), r6(maxy)],
     center: [r6((minx+maxx)/2), r6((miny+maxy)/2)],
     nodes: nodeCount, edges: edges.length,
-    speeds_kmh: SPEED_KMH,
+    speeds_kmh: SPEED_KMH, // per-class fallback (used only if edge_speeds is absent)
     // edge tuple layout: [aIdx, bIdx, length_m, classIdx, onewayCode, nameIdx, ...interiorLonLat]
     edge_layout: ["a","b","len_m","cls","oneway","name",".. interior lon,lat pairs"],
     service_penalty: 4, // suggested A* cost multiplier for service roads (see Task 5)
+    speed_source: "valhalla-style: tagged maxspeed > urban/rural class default > adjustments",
   },
   classes, names, nodes: nodeXY, edges,
   wayids, // parallel to edges: OSM way id (for matching HD lanes to the route, Task 11)
+  edge_speeds, // parallel to edges: assigned speed (km/h), Valhalla-style
 };
 const json = JSON.stringify(graph);
 writeFileSync(OUT, json);
