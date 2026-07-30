@@ -9,7 +9,7 @@
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { initEngine, osmToLayers, landcoverFromOsm } from "./build.mjs";
+import { initEngine, osmToLayers, landcoverFromOsm, elevatedRoadsFromOsm } from "./build.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dir, "data");
@@ -72,6 +72,7 @@ try {
   const { water, green } = landcoverFromOsm(osmXml);
   writeFileSync(join(dataDir, "water.geojson"), JSON.stringify(water));
   writeFileSync(join(dataDir, "green.geojson"), JSON.stringify(green));
+  writeFileSync(join(dataDir, "roads_3d.geojson"), JSON.stringify(elevatedRoadsFromOsm(osmXml)));
   for (const [k, v] of Object.entries(counts))
     console.log(`      ${k.padEnd(14)} ${v} features`);
 

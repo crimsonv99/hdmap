@@ -1290,7 +1290,8 @@
           // (a road split for a tag change) ARE filled: their little polygon sits
           // between the two road halves, so hiding it left a background-coloured gap
           // in the carriageway. Filled with road asphalt (below) it closes seamlessly.
-          filter: ["!=", ["get", "intersection_kind"], "MapEdge"],
+          // ground junctions only; elevated ones (layer>=1) are extruded below
+          filter: ["all", ["!=", ["get", "intersection_kind"], "MapEdge"], ["<", LYR, 1]],
           layout: { "fill-sort-key": sortKey },
           paint: {
             "fill-color": "#5b6270", // one continuous asphalt surface
@@ -1298,9 +1299,32 @@
           }
         },
         ...bandFills("", ["<", LYR, 1]),     // ground / tunnel asphalt + paint
-        // elevated (bridges/overpasses) drawn on top, same casing-then-fill order
-        ...bandEdges("-hi", [">=", LYR, 1]),
-        ...bandFills("-hi", [">=", LYR, 1]),
+        // ELEVATED roads (layer>=1 bridges / flyovers): native MapLibre fill-extrusion
+        // decks, lifted to layer×5 m and shaded like the 3D buildings. Replaces the old
+        // flat "-hi" band AND the hand-rolled three.js deck. fill-extrusion can't slope,
+        // so these are flat slabs at altitude (a road steps up onto the deck).
+        {
+          id: "lanes-elevated", type: "fill-extrusion", source: "lanes",
+          filter: [">=", LYR, 1], minzoom: 14,
+          paint: {
+            "fill-extrusion-color": "#5b6270",
+            "fill-extrusion-base": ["*", LYR, 5],
+            "fill-extrusion-height": ["+", ["*", LYR, 5], 1.0],
+            "fill-extrusion-opacity": 1,
+            "fill-extrusion-vertical-gradient": true,
+          },
+        },
+        {
+          id: "inter-elevated", type: "fill-extrusion", source: "intersections",
+          filter: ["all", ["!=", ["get", "intersection_kind"], "MapEdge"], [">=", LYR, 1]],
+          minzoom: 14,
+          paint: {
+            "fill-extrusion-color": "#5b6270",
+            "fill-extrusion-base": ["*", LYR, 5],
+            "fill-extrusion-height": ["+", ["*", LYR, 5], 1.0],
+            "fill-extrusion-opacity": 1,
+          },
+        },
         // traffic-light marker at signalised junctions (control="Signalled")
         {
           id: "inter-signal", type: "symbol", source: "intersections",
@@ -1459,6 +1483,10 @@
       window._m = map;
       window._dataBounds = dataBounds; // press "f" to frame the whole network
 
+      // Elevated roads (layer>=1 bridges/flyovers) are drawn NATIVELY as MapLibre
+      // fill-extrusion decks in the style (see "lanes-elevated") — shaded like the 3D
+      // buildings, no three.js. The old hand-rolled deck overlay lived here.
+
       // The boot view is fixed (DEFAULT_CENTER, above). That's correct for the
       // default area. But if you've fetched a different region, the loaded data
       // won't sit under Pham Hung — so if the fixed center falls outside the
@@ -1596,11 +1624,10 @@
       const parseWayId = (f) => idList(f.properties.osm_way_ids)[0];
 
       // layer toggles (highlight layers hl-* are declared in the style above)
-      bind("t-lanes", "lanes", "lanes-edge", "lanes-hi", "lanes-edge-hi", "lanes-alley", "lanes-alley-hi", "lanes-service", "lanes-service-hi");
-      bind("t-inter", "intersections", "inter-edge", "inter-signal");
-      bind("t-mark", "markings", "markings-hi");
-      bind("t-turn", "turn-left", "turn-right", "turn-arrows",
-        "turn-left-hi", "turn-right-hi", "turn-arrows-hi");
+      bind("t-lanes", "lanes", "lanes-edge", "lanes-alley", "lanes-service", "lanes-elevated");
+      bind("t-inter", "intersections", "inter-edge", "inter-signal", "inter-elevated");
+      bind("t-mark", "markings");
+      bind("t-turn", "turn-left", "turn-right", "turn-arrows");
       bind("t-bldg", "buildings-3d", "buildings-staged");
       // All-data tab toggles (share the water/green/raw-roads/buildings layers)
       bind("ad-roads", "raw-roads");
@@ -1721,13 +1748,15 @@
       map.on("load", () => applyBasemap(currentBasemap)); // restore last choice
       // [layer id, paint prop, base opacity] for every HD layer the slider fades
       const HD_OPACITY = [
-        ["lanes", "fill-opacity", 1], ["lanes-hi", "fill-opacity", 1],
-        ["lanes-edge", "line-opacity", 1], ["lanes-edge-hi", "line-opacity", 1],
-        ["markings", "fill-opacity", 0.9], ["markings-hi", "fill-opacity", 0.9],
-        ["turn-left", "fill-opacity", 0.55], ["turn-left-hi", "fill-opacity", 0.55],
-        ["turn-right", "fill-opacity", 0.55], ["turn-right-hi", "fill-opacity", 0.55],
+        ["lanes", "fill-opacity", 1],
+        ["lanes-edge", "line-opacity", 1],
+        ["markings", "fill-opacity", 0.9],
+        ["turn-left", "fill-opacity", 0.55],
+        ["turn-right", "fill-opacity", 0.55],
         ["intersections", "fill-opacity", 1], ["inter-edge", "line-opacity", 0.9],
-        ["turn-arrows", "icon-opacity", 1], ["turn-arrows-hi", "icon-opacity", 1],
+        ["turn-arrows", "icon-opacity", 1],
+        // elevated fill-extrusion decks fade too, so imagery stays readable underneath
+        ["lanes-elevated", "fill-extrusion-opacity", 1], ["inter-elevated", "fill-extrusion-opacity", 1],
       ];
       // always-visible bottom-left bar; also fades the 3D buildings so imagery
       // stays readable underneath them
@@ -1757,9 +1786,10 @@
       });
       const setSrc = (id, data) => { const s = map.getSource(id); if (s) s.setData(data); };
 
-      // interactions must cover BOTH elevation bands (ground + elevated),
-      // else overpass/bridge lanes (layer>=1, in "lanes-hi") aren't hoverable.
-      const LANE_LAYERS = ["lanes", "lanes-hi"];
+      // interactions must cover BOTH the ground lanes and the elevated decks, else
+      // overpass/bridge lanes (layer>=1, now the "lanes-elevated" fill-extrusion)
+      // aren't hoverable/clickable. queryRenderedFeatures works on fill-extrusion too.
+      const LANE_LAYERS = ["lanes", "lanes-elevated"];
       // when features overlap (overpass over road), pick the topmost = highest layer
       const topWayId = (feats) => {
         const f = feats.slice().sort(
@@ -1886,6 +1916,8 @@
         if (rw) map.getSource("raw-roads")?.setData(rw); // LOD overview / all-data lines
         if (wt) map.getSource("water")?.setData(wt);
         if (gr) map.getSource("green")?.setData(gr);
+        // elevated-road decks (fill-extrusion) read from the "lanes" source above, so
+        // they refresh automatically with setData — no extra handling needed.
         applyMode(mt); // flip the HD/overview banner if the area size crossed the gateway
         // source gets the shrunk (gapped) copy for display; currentBuildings keeps
         // the true geometry for editing/height lookup.

@@ -9,7 +9,7 @@
 import { readFileSync, writeFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { initEngine, osmToLayers, roadsFromOsm } from "./build.mjs";
+import { initEngine, osmToLayers, roadsFromOsm, elevatedRoadsFromOsm } from "./build.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dir, "data");
@@ -52,6 +52,10 @@ export function rebuildFiles(source, { fetchedAt } = {}) {
   const rawRoads = roadsFromOsm(xml);
   const roadCount = rawRoads.features.length;
   const mode = roadCount <= WAY_LIMIT ? "hd" : "raw";
+
+  // Elevated-road overlay (OSM `layer` -> altitude + tilt ramps). Cheap, geometry-
+  // only, so it's produced in BOTH modes and is independent of the osm2streets gate.
+  writeFileSync(join(dataDir, "roads_3d.geojson"), JSON.stringify(elevatedRoadsFromOsm(xml)));
 
   let center, counts;
   if (mode === "hd") {

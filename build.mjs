@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
+import { roadLevel, nodeAltitudes, elevateSegment, deckQuads, deckWidth } from "../elevation.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 
@@ -528,6 +529,64 @@ export function linesFromOsm(osmXml) {
       geometry: { type: "LineString", coordinates: line },
       properties: { osm_way_id: w.getAttribute("id"), kind, ...tags },
     });
+  }
+  return { type: "FeatureCollection", features };
+}
+
+// Elevated road network for the 3D overlay. Highway centerlines are split at
+// junction nodes and lifted to their baked altitude — the OSM `layer` tag sets each
+// road's height, a junction sits at the LOWEST layer meeting there, and higher roads
+// ramp down to reach it (so an overpass tilts up and back down, a tunnel dips). The
+// model is the shared ../elevation.mjs, identical to the MVP-3D-MAP baker. SPARSE:
+// only segments that actually leave the ground are emitted. Coordinates are
+// [lng, lat, z] with z in metres — the 2D map layers ignore the third ordinate, the
+// three.js overlay reads it.
+export function elevatedRoadsFromOsm(osmXml) {
+  const doc = new DOMParser().parseFromString(osmXml, "text/xml");
+  const nodes = new Map();
+  const nodeEls = doc.getElementsByTagName("node");
+  for (let i = 0; i < nodeEls.length; i++) {
+    const n = nodeEls[i];
+    const id = n.getAttribute("id");
+    const lon = parseFloat(n.getAttribute("lon")), lat = parseFloat(n.getAttribute("lat"));
+    if (id && Number.isFinite(lon) && Number.isFinite(lat)) nodes.set(id, [lon, lat]);
+  }
+  const ways = [];
+  const wayEls = doc.getElementsByTagName("way");
+  for (let i = 0; i < wayEls.length; i++) {
+    const w = wayEls[i];
+    const tags = {};
+    const tagEls = w.getElementsByTagName("tag");
+    for (let j = 0; j < tagEls.length; j++) tags[tagEls[j].getAttribute("k")] = tagEls[j].getAttribute("v");
+    if (!tags.highway) continue;
+    const ndEls = w.getElementsByTagName("nd");
+    const refs = [];
+    for (let j = 0; j < ndEls.length; j++) { const r = ndEls[j].getAttribute("ref"); if (nodes.has(r)) refs.push(r); }
+    if (refs.length < 2) continue;
+    ways.push({ id: w.getAttribute("id"), refs, tags, layer: roadLevel(tags) });
+  }
+  const nz = nodeAltitudes(ways.map((w) => ({ nodeIds: w.refs, layer: w.layer })));
+  // junction node: shared by >=2 highway ways, or a way endpoint
+  const refCount = new Map();
+  for (const w of ways) for (const r of w.refs) refCount.set(r, (refCount.get(r) || 0) + 1);
+  const isJunction = (r, i, n) => i === 0 || i === n - 1 || (refCount.get(r) || 0) >= 2;
+  const features = [];
+  for (const w of ways) {
+    let start = 0;
+    for (let i = 1; i < w.refs.length; i++) {
+      if (!isJunction(w.refs[i], i, w.refs.length)) continue;
+      const segRefs = w.refs.slice(start, i + 1);
+      const coords = segRefs.map((r) => nodes.get(r));
+      const za = nz.get(segRefs[0]) || 0, zb = nz.get(segRefs[segRefs.length - 1]) || 0;
+      const z = elevateSegment(coords, za, zb, w.layer);
+      if (z.some((v) => v !== 0)) {
+        // fill-extrusion deck segments (each with its own base/top height → a stepped
+        // ramp approximating the smooth profile, so the deck meets the ground)
+        const coordsZ = coords.map((c, k) => [c[0], c[1], Math.round(z[k] * 100) / 100]);
+        for (const f of deckQuads(coordsZ, deckWidth(w.tags.highway))) features.push(f);
+      }
+      start = i;
+    }
   }
   return { type: "FeatureCollection", features };
 }
