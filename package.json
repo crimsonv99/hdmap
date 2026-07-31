@@ -1,0 +1,28 @@
+{
+  "name": "mvp-3d-map",
+  "version": "1.0.0",
+  "description": "A Google/Amap-style 3D city map with client-side turn-by-turn navigation. Renders pre-baked HD map data (osm2streets lane geometry, lane markings, turn arrows, detailed 3D buildings) with MapLibre + three.js, plus a routing graph and A* running entirely in the browser. Includes the offline baking pipeline (osm2streets + osmium + tippecanoe) to regenerate the vector tiles.",
+  "main": "api.mjs",
+  "scripts": {
+    "start": "node api.mjs",
+    "serve": "node serve.mjs",
+    "bake:graph": "node bake-graph.mjs",
+    "bake:buildings": "node --max-old-space-size=4096 bake-buildings.mjs",
+    "restamp": "node restamp-intersections.mjs",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://git-vmaps-devops.vtii.vn/mobility/mvp-3d-map.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@xmldom/xmldom": "^0.9.10",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "osm2streets-js": "^0.1.4"
+  }
+}

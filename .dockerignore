@@ -1,0 +1,23 @@
+node_modules
+.npm
+Dockerfile
+.dockerignore
+.git
+.gitignore
+.DS_Store
+*.py
+
+# Secret — supplied at runtime via the API_KEYS env var, never baked into the image.
+keys.json
+
+# Regenerable / heavy build products the runtime doesn't need.
+# KEEP tiles/ and data/graph.json — the app serves those.
+build/
+data/*.pmtiles
+data/*.geojson
+# …except the elevated-road overlay + deck markings, which the browser fetches at runtime.
+!data/roads_3d.geojson
+!data/deck_markings.geojson
+!data/deck_junctions.geojson
+index-district.html
+task_list.md

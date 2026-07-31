@@ -1,93 +1,199 @@
-# mvp-3d-map
+# 3D City Map — MVP
 
+A **Google/Amap-style 3D city map with client-side turn-by-turn navigation**,
+rendering the same HD scene the `hdmap` editor produces — osm2streets lane
+geometry, lane markings, turn arrows, and inferred **3D buildings** — but with
+**no editor, no server, no WASM at runtime**. Just pre-baked map data painted
+with MapLibre, plus a routing graph and A\* running entirely in the browser.
 
+It runs **standalone from a static host** (GitHub Pages): the whole thing is
+plain files — HTML, vector tiles, and one JSON graph.
 
-## Getting started
+There are **two viewers**, same style, different scale:
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+| Viewer | Covers | Data source | For |
+|---|---|---|---|
+| **`index.html`** (the front page) | **all of urban Hanoi** | **`./tiles`** (uncompressed MVT) + **`data/graph.json`** (routing) | **the real webmap + navigation** |
+| `index-district.html` | one district (Pham Hung) | raw GeoJSON in `data/` | the original quick demo |
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+The city viewer is the point: it covers the whole city and stays fast because
+MapLibre only fetches the tiles under the current view. See
+[Baking the city](#baking-the-city) to (re)generate the data.
 
-## Add your files
+---
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+## Quick start
+
+```bash
+cd MVP-3D-MAP
+node serve.mjs                     # -> http://localhost:8100
+```
+
+Then open:
+- **`http://localhost:8100/`** — the whole-Hanoi 3D map (boots tilted over
+  Hoan Kiem lake). Pan anywhere in the city; tiles stream in as you go.
+- `http://localhost:8100/index-district.html` — the single-district GeoJSON demo.
+
+Drag to pan, scroll to zoom, **right-drag** (or two-finger) to rotate/tilt.
+
+> A tiny HTTP server is required — you can't just double-click the HTML, because
+> the page fetches tiles + `graph.json` from `./` over HTTP. `serve.mjs` has
+> **zero dependencies**.
+
+### Controls
+- **Search box** — paste `lat, lng` (Google/OSM order) to fly there. In 🧭 route
+  mode, a typed coordinate instead **drops the next route point** (snapped).
+- **3D view** — toggle tilt on/off (turn it off for a flat 2D map).
+- **🌙 Dark** — neon night theme (gray-black ground, nightfall sky + stars,
+  cyan buildings).
+- **🧭 Route** — enter navigation mode (see [Navigation](#navigation)).
+- **Frame city** / **⌖ North** — reset view / rotation.
+- **Layers card** (bottom-left) — toggle roads / markings / turn arrows /
+  buildings / satellite base.
+- **Click** a building or road for a quick info popup; **double-click** anywhere
+  to copy that `lat, lng` to your clipboard.
+- **Geolocate** button (top-right) — jump to your real location.
+
+---
+
+## Navigation
+
+Fully client-side — no routing server. A compact **routing graph**
+(`data/graph.json`, ~6.5 MB / ~1.9 MB gzipped, loaded lazily on first use) carries
+the road network with full, unclipped connectivity (vector tiles are clipped at
+tile borders, so we can't route on them directly).
+
+- **Pick a route** — click **🧭 Route**, then click a **start (A)** and
+  **destination (B)** on the map (they snap to the nearest road), or type
+  coordinates in the search box. A\* finds the shortest-**time** path — cost is
+  `length ÷ class speed`, with `service` roads penalised so they're used only for
+  access, not shortcuts.
+- **2D directions panel** — Amap/Google-style: turn-by-turn steps (derived from
+  bearing changes), distance to each, total **distance · ETA · arrival clock**,
+  a swap button, and a show/hide toggle. ETAs use realistic urban speeds
+  (`ETA_SPEED_KMH` in `index.html`), not free-flow limits.
+- **3D drive mode** — hit **▶ GO**: a follow-cam flies the route with a **car
+  marker**, a top **maneuver banner** (next turn + distance + road), a
+  **speed readout**, and a bottom progress bar (remaining · arrival). Play/pause.
+- **Lane-level guidance** — while driving, the car's **actual HD lanes** light up
+  (green), matched to the route's OSM ways by `osm_way_ids` + `direction` and
+  windowed to the current way + one ahead. This needs those two attributes in the
+  tiles — see the `KEEP` list in `bake-tiles.sh`.
+
+Scope note: routing is bounded to the baked extent (the graph ships for that
+area). Cross-region routing would need a bigger graph or an external API.
+
+---
+
+## What's inside
 
 ```
-cd existing_repo
-git remote add origin https://git-vmaps-devops.vtii.vn/mobility/mvp-3d-map.git
-git branch -M main
-git push -uf origin main
+MVP-3D-MAP/
+├─ index.html          CITY viewer + navigation ← the front page
+├─ index-district.html district viewer (raw GeoJSON demo)
+├─ serve.mjs           zero-dep static server
+├─ bake-city.mjs       OSM extract → tile → osm2streets → NDGeoJSON layers
+├─ bake-tiles.sh       NDGeoJSON → ./tiles (uncompressed MVT, tippecanoe+tile-join)
+├─ bake-graph.mjs      OSM highways → data/graph.json (routing graph)
+├─ tiles/              baked {z}/{x}/{y}.pbf vector tiles (committed, served)
+├─ data/
+│   ├─ graph.json          routing graph (nodes/edges + per-edge osm_way_id)
+│   ├─ hanoi-meta.json      bbox/center/counts for the city bake
+│   └─ *.geojson, meta.json the original district layers (index-district.html)
+├─ image/car.png       trimmed top-view car marker for 3D drive mode
+├─ build/              baker intermediates (gitignored: pbf, layers, pmtiles)
+└─ README.md
 ```
 
-## Integrate with your tools
+The paint (road ordering, building height ramp, sky, light) is copied from the
+editor's `index.html`, so the base map looks identical — same style, pointed at
+vector tiles instead of a live osm2streets source.
 
-* [Set up project integrations](https://git-vmaps-devops.vtii.vn/mobility/mvp-3d-map/-/settings/integrations)
+---
 
-## Collaborate with your team
+## Baking the city
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+A whole city is far too much geometry to hold in the browser, so it's pre-baked
+into **vector tiles**. The viewer fetches only the tiles under the current view.
 
-## Test and Deploy
+Tiles are served as an **uncompressed `{z}/{x}/{y}.pbf` directory** (not a single
+PMTiles archive): MapLibre v5 errors on gzipped tiles unless the server sends
+`Content-Encoding: gzip`, which GitHub Pages can't do for `.pbf`. Raw MVT renders
+everywhere with no headers.
 
-Use the built-in continuous integration in GitLab.
+### The pipeline (all built here)
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+```
+Geofabrik .pbf ──► osmium (clip + tile) ──► osm2streets per tile ──► NDGeoJSON
+                                                                        │
+                                                              tippecanoe + tile-join
+                                                                        │
+                                                                    ./tiles ──► MapLibre
+     └──► osmium (highways) ──► bake-graph.mjs ──► data/graph.json ──► A* (browser)
+```
 
-***
+osm2streets can't swallow a city at once, so `bake-city.mjs` **tiles** it: cuts
+the extract into ~1.6 km cells (`--strategy complete_ways`, so boundary roads
+arrive whole), runs osm2streets on each, and keeps every output feature in
+exactly one tile (**centroid ownership**) so overlapping cells never
+double-render. Output streams to NDGeoJSON to keep memory flat.
 
-# Editing this README
+### Re-bake / bake a different city
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+```bash
+# 0. one-time tooling
+brew install tippecanoe pmtiles osmium-tool
 
-## Suggestions for a good README
+# 1. get an OSM extract (Vietnam shown; swap for your country)
+curl -L -o build/vietnam-latest.osm.pbf \
+  https://download.geofabrik.de/asia/vietnam-latest.osm.pbf
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+# 2. tile + osm2streets  (default bbox = Hanoi urban core; or pass S W N E [tileDeg])
+node bake-city.mjs build/vietnam-latest.osm.pbf
 
-## Name
-Choose a self-explaining name for your project.
+# 3. bake to the ./tiles directory (+ copies meta for the viewer)
+MAXZOOM=18 ./bake-tiles.sh      # z18 so the 3D-drive close-up renders native
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+# 4. bake the routing graph (reads build/city.osm.pbf from step 2)
+node bake-graph.mjs             # -> data/graph.json
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+# 5. view it
+node serve.mjs                  # -> http://localhost:8100
+```
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+`./tiles` (~211 MB at z18) + `data/graph.json` are committed and served straight
+from **any static host** — GitHub Pages, S3, Cloudflare R2 — no tile server.
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+**Size / fidelity knobs** (env vars on `bake-tiles.sh`): lane markings + turn
+arrows (~75% of the geometry) bake only from `MARK_MINZOOM=16` up; everything
+caps at `MAXZOOM` (18 here). Baking to z18 keeps the close-up drive view crisp
+(z17 got overzoomed/clipped at drive zoom); dropping back to `MAXZOOM=17` roughly
+halves the tile size at the cost of soft close-ups. The `KEEP` list in
+`bake-tiles.sh` is the attribute allowlist — `osm_way_ids` + `direction` must stay
+in it for lane-level guidance to work.
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+### Beyond one city
+- **Two-tier style.** HD lane geometry only reads at z15+. Below that, fall back
+  to a normal OSM road-line tileset so the map stays useful zoomed out.
+- **Terrain.** Add a MapLibre `terrain` DEM + `hillshade` for hills under a
+  tilted camera. Independent of the data pipeline; big visual payoff.
+- **Updates.** A baked tileset is a snapshot. Decide the refresh cadence — that
+  choice drives how much backend you sign up for.
+- **Editing.** To let people *edit*, keep this baked map as the fast base and drop
+  the `hdmap` WASM editor in as an overlay for the small area being edited.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+---
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+## Limitations (be honest)
+- **Hanoi urban core only.** The viewer covers the default bake bbox; pan past its
+  edge and you'll see empty ground until you bake a wider bbox. Routing is bounded
+  to the same extent.
+- **Frozen snapshot.** Tiles + graph are whatever OSM looked like at bake time.
+  Re-run the pipeline to refresh; there's no live update.
+- **No live traffic.** Routes are single-colour and ETAs are model-based (realistic
+  urban speeds), not real-time — there's no traffic feed. No signal-timing either.
+- **Inferred, not surveyed.** Road widths and building heights are estimated by the
+  pipeline (same caveat as the editor), not ground truth.
+- **Junction interiors.** osm2streets renders big junction interiors as
+  "intersection" polygons (not lanes), so the lane highlight can show a small gap
+  inside large junctions (the lanes leading in/out are highlighted).

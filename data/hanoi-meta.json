@@ -1,0 +1,22 @@
+{
+  "bbox": [
+    105.755,
+    20.955,
+    105.885,
+    21.095
+  ],
+  "center": [
+    105.82,
+    21.025
+  ],
+  "tile": 0.015,
+  "tiles": 90,
+  "failed": 1,
+  "totals": {
+    "lanes": 288595,
+    "markings": 859706,
+    "intersections": 63734,
+    "turn_arrows": 67919,
+    "buildings": 95852
+  }
+}

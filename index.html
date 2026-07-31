@@ -1,0 +1,2516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>3D City Map — osm2streets + MapLibre</title>
+  <link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    html, body { margin: 0; height: 100%; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    #map { position: absolute; inset: 0; }
+
+    /* Glassmorphism helpers */
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-panel-dark {
+      background: rgba(18, 22, 30, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+
+    /* --- floating search bar --- */
+    #search {
+      position: absolute; top: 16px; left: 16px; z-index: 5;
+      display: flex; gap: 8px; align-items: center;
+      border-radius: 24px; padding: 6px 8px 6px 20px;
+      width: min(360px, calc(100vw - 32px));
+    }
+    #search:hover { box-shadow: 0 12px 36px rgba(0, 0, 0, 0.15); transform: translateY(-1px); }
+    #search input { border: 0; outline: 0; flex: 1; font-size: 15px; font-weight: 500; background: transparent; color: #1a2430; }
+    #search button {
+      border: 0; background: linear-gradient(135deg, #2f6bd6, #4f85e5); color: #fff; width: 34px; height: 34px;
+      border-radius: 50%; cursor: pointer; font-size: 16px; line-height: 1;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    #search button:hover { transform: scale(1.05); box-shadow: 0 4px 12px rgba(47, 107, 214, 0.4); }
+    #search .hint { color: #8a94a3; font-size: 12px; font-weight: 500; }
+
+    /* --- bottom-right view controls --- */
+    #controls {
+      position: absolute; bottom: 32px; right: 16px; z-index: 5;
+      display: flex; flex-direction: column; gap: 10px; align-items: stretch;
+    }
+    #controls button {
+      border: 0; border-radius: 12px; padding: 10px 14px;
+      cursor: pointer; font-size: 14px; color: #23303f; font-weight: 600; white-space: nowrap;
+    }
+    #controls button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.15); }
+    #controls button.on { background: linear-gradient(135deg, #2f6bd6, #4f85e5); color: #fff; border: none; }
+    /* segmented 2D | 3D toggle — the ACTIVE mode is highlighted, so the current
+       view is never ambiguous */
+    #controls .seg { display: flex; gap: 4px; padding: 5px; }
+    #controls .seg button { flex: 1; padding: 7px 6px; border-radius: 9px; background: transparent; }
+    #controls .seg button:hover { transform: none; box-shadow: none; background: rgba(0,0,0,.06); }
+    #controls .seg button.active { background: linear-gradient(135deg, #2f6bd6, #4f85e5); color: #fff; }
+    #controls .seg button.active:hover { background: linear-gradient(135deg, #2f6bd6, #4f85e5); }
+
+    /* --- navigation: pick-mode hint pill + snapped-point markers --- */
+    #nav-hint {
+      position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+      z-index: 6; display: none; color: #eef1f6;
+      padding: 10px 20px; border-radius: 24px; font-size: 14px; font-weight: 600;
+      white-space: nowrap;
+    }
+    #nav-hint.on { display: block; animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    @keyframes slideDown { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    
+    #nav-summary {
+      position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
+      z-index: 6; display: none; align-items: center; gap: 12px;
+      color: #16202c; border-radius: 16px; padding: 12px 20px;
+      font-size: 16px; font-weight: 700; white-space: nowrap;
+    }
+    #nav-summary.on { display: flex; animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    @keyframes slideUp { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    #nav-summary .dist { color: #2f6bd6; font-weight: 800; }
+    #nav-summary .sep { opacity: .3; font-weight: 400; }
+    #nav-summary .clear { cursor: pointer; color: #8a94a3; border-left: 1px solid rgba(0,0,0,0.1); padding-left: 14px; transition: color 0.2s; }
+    #nav-summary .clear:hover { color: #e5484d; }
+
+    /* --- directions panel --- */
+    #nav-panel {
+      position: absolute; top: 82px; left: 16px; z-index: 7; width: 340px;
+      max-height: calc(100% - 210px); display: none; flex-direction: column;
+      border-radius: 20px; overflow: hidden; color: #1a2430; font-size: 14px;
+    }
+    #nav-panel.on { display: flex; animation: slideRight 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    @keyframes slideRight { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+    #nav-panel .np-head { padding: 18px 20px 16px; border-bottom: 1px solid rgba(0,0,0,0.06); position: relative; }
+    #nav-panel .np-eta { font-size: 26px; font-weight: 800; color: #2f6bd6; background: -webkit-linear-gradient(45deg, #2f6bd6, #00d2ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    #nav-panel .np-eta small { font-size: 14px; font-weight: 600; color: #5b6470; margin-left: 8px; -webkit-text-fill-color: #5b6470; }
+    #nav-panel .np-sub { margin-top: 4px; color: #5b6470; font-size: 13px; font-weight: 500; }
+    #nav-panel .np-hide {
+      position: absolute; top: 16px; right: 16px; cursor: pointer; border: 0;
+      background: rgba(0,0,0,0.05); width: 30px; height: 30px; border-radius: 50%;
+      font-size: 18px; line-height: 1; color: #43506a; font-weight: 700; transition: background 0.2s, transform 0.2s;
+    }
+    #nav-panel .np-hide:hover { background: rgba(0,0,0,0.1); transform: scale(1.1); }
+    #nav-panel .np-od { padding: 12px 20px; border-bottom: 1px solid rgba(0,0,0,0.06); }
+    #nav-panel .np-od .row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+    #nav-panel .np-od .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    #nav-panel .np-od .dot.a { background: #22c55e; }
+    #nav-panel .np-od .dot.b { background: #ef4444; }
+    #nav-panel .np-od .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+    #nav-panel .np-swap { margin-left: auto; cursor: pointer; border: 0; background: none; font-size: 18px; color: #5b6470; transition: transform 0.2s, color 0.2s; }
+    #nav-panel .np-swap:hover { color: #2f6bd6; transform: rotate(180deg); }
+    #nav-panel .np-steps { overflow-y: auto; padding: 4px 0; }
+    #nav-panel .step { display: flex; gap: 14px; padding: 14px 20px; border-bottom: 1px solid rgba(0,0,0,0.03); transition: background 0.2s; }
+    #nav-panel .step:hover { background: rgba(0,0,0,0.02); }
+    #nav-panel .step .ic { font-size: 20px; line-height: 1.1; color: #2f6bd6; flex: none; width: 24px; text-align: center; }
+    #nav-panel .step .tx { flex: 1; line-height: 1.4; font-weight: 500; }
+    #nav-panel .step .ds { color: #8a94a3; font-size: 13px; margin-top: 4px; font-weight: 600; }
+    #nav-panel .step.arrive .ic { color: #e5484d; }
+    #nav-steps-btn {
+      position: absolute; top: 82px; left: 16px; z-index: 7; display: none;
+      background: linear-gradient(135deg, #2f6bd6, #4f85e5); color: #fff; border: 0; border-radius: 12px;
+      padding: 10px 16px; font-weight: 700; font-size: 14px; cursor: pointer;
+      box-shadow: 0 4px 14px rgba(47, 107, 214, 0.4); transition: transform 0.2s, box-shadow 0.2s;
+    }
+    #nav-steps-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(47, 107, 214, 0.5); }
+    #nav-steps-btn.on { display: block; animation: slideRight 0.3s ease; }
+    #nav-panel .np-go {
+      display: block; width: 100%; margin-top: 16px; padding: 12px; border: 0;
+      border-radius: 12px; background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-size: 16px;
+      font-weight: 800; cursor: pointer; letter-spacing: 0.5px; transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+    #nav-panel .np-go:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4); }
+
+    /* --- 3D drive mode --- */
+    #drive-ui { display: none; }
+    #drive-ui.on { display: block; }
+    /* maneuver card — top-LEFT, nav-app style (arrow + distance + street, then a
+       "Then <arrow>" preview of the maneuver after it) */
+    #drive-banner {
+      position: absolute; top: 18px; left: 16px; z-index: 8;
+      color: #fff; padding: 14px 18px; border-radius: 18px;
+      min-width: 210px; max-width: 340px;
+    }
+    #drive-banner .b-top { display: flex; align-items: center; gap: 14px; }
+    #drive-banner .b-ic { font-size: 40px; line-height: 1; color: #2fd06e; flex: none; }
+    #drive-banner .b-info { display: flex; flex-direction: column; min-width: 0; }
+    #drive-banner .b-dist { font-size: 27px; font-weight: 800; line-height: 1.1; }
+    #drive-banner .b-dist small { font-size: 15px; font-weight: 700; opacity: .85; margin-left: 3px; }
+    #drive-banner .b-road { font-size: 16px; font-weight: 700; opacity: .92; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 250px; }
+    #drive-banner .b-then { display: none; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px;
+      border-top: 1px solid rgba(255,255,255,.16); font-size: 14px; opacity: .8; }
+    #drive-banner .b-then.on { display: flex; }
+    #drive-banner .b-then .b-then-ic { font-size: 20px; color: #2fd06e; }
+
+    /* speed cluster — top-RIGHT: posted-limit disc over current-speed pill */
+    #drive-speed {
+      position: absolute; right: 14px; top: 84px; z-index: 8;
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+    }
+    #drive-speed .limit {
+      width: 60px; height: 60px; border-radius: 50%; background: #fff; border: 5px solid #e23b3b;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; color: #16202c;
+      box-shadow: 0 3px 10px rgba(0,0,0,.28);
+    }
+    #drive-speed .limit b { font-size: 21px; font-weight: 800; line-height: 1; }
+    #drive-speed .limit span { font-size: 8px; font-weight: 700; color: #8a90a0; letter-spacing: .3px; }
+    #drive-speed .cur {
+      background: rgba(20,26,34,.85); color: #fff; border-radius: 14px; padding: 6px 0; min-width: 60px;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    #drive-speed .cur b { font-size: 22px; font-weight: 800; line-height: 1; }
+    #drive-speed .cur span { font-size: 9px; font-weight: 700; opacity: .65; }
+
+    #drive-bottom {
+      position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+      z-index: 8; display: flex; align-items: center; gap: 20px;
+      color: #16202c; padding: 12px 18px;
+      border-radius: 20px; font-size: 14px;
+    }
+    #drive-bottom .big { font-size: 20px; font-weight: 800; }
+    #drive-bottom .muted { color: #6b7684; font-weight: 500; }
+    #drive-bottom button {
+      border: 0; background: rgba(0,0,0,0.05); color: #23303f; width: 44px; height: 44px;
+      border-radius: 50%; cursor: pointer; font-size: 18px; font-weight: 700;
+      transition: background 0.2s, transform 0.2s;
+    }
+    #drive-bottom button.exit { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+    #drive-bottom button:hover { transform: scale(1.1); background: rgba(0,0,0,0.1); }
+    #drive-bottom button.exit:hover { background: rgba(239, 68, 68, 0.2); }
+    
+    .drive-car { filter: drop-shadow(0 4px 8px rgba(0,0,0,.4)); }
+    /* 2D-mode car: a green chevron on a soft halo disc (Hudhud/Google style),
+       rotates with heading. The disc is circular so rotation only turns the arrow. */
+    .car2d { width: 48px; height: 48px; filter: drop-shadow(0 3px 6px rgba(0,0,0,.6)); }
+    .car2d svg { display: block; }
+    .nav-pin {
+      width: 28px; height: 28px; border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg); border: 2.5px solid #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,.3); cursor: pointer;
+      display: grid; place-items: center; transition: transform 0.2s;
+    }
+    .nav-pin:hover { transform: rotate(-45deg) scale(1.15); }
+    .nav-pin b { transform: rotate(45deg); color: #fff; font-size: 13px; font-weight: 800; }
+    .nav-pin.a { background: #22c55e; }
+    .nav-pin.b { background: #ef4444; }
+
+    /* --- legend / layers card --- */
+    #legend {
+      position: absolute; bottom: 32px; left: 16px; z-index: 5;
+      border-radius: 16px; padding: 14px 16px;
+      font-size: 13px; color: #23303f; max-width: 220px; font-weight: 500;
+    }
+    #legend b { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 700; }
+    #legend label { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; transition: opacity 0.2s; }
+    #legend label:hover { opacity: 0.8; }
+    #legend .sw { width: 14px; height: 14px; border-radius: 4px; flex: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+    /* --- live camera readout --- */
+    #readout {
+      position: absolute; bottom: 36px; left: 50%; transform: translateX(-50%); z-index: 5;
+      color: #e7ecf3; border-radius: 12px;
+      padding: 8px 14px; font: 12px/1.4 'Inter', ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: nowrap; pointer-events: none;
+    }
+    #readout b { color: #9ec5f0; font-weight: 700; }
+    @media (max-width: 640px) { #readout { display: none; } }
+
+    .maplibregl-ctrl-attrib { font-size: 11px; font-family: 'Inter', sans-serif; }
+
+    /* --- dark-mode starfield --- */
+    #stars {
+      position: absolute; top: 0; left: 0; right: 0; height: 55%; z-index: 1;
+      pointer-events: none; opacity: 0; transition: opacity .6s ease;
+      -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+      mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+    }
+    #stars.on { opacity: 1; }
+    #stars i {
+      position: absolute; display: block; background: #eaf6ff; border-radius: 50%;
+      box-shadow: 0 0 5px 1px rgba(180,230,255,.8);
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="stars"></div>
+  <div id="nav-hint" class="glass-panel-dark"></div>
+  <div id="nav-summary" class="glass-panel"></div>
+  <div id="nav-panel" class="glass-panel"></div>
+  <button id="nav-steps-btn">📋 Directions ›</button>
+
+  <div id="drive-ui">
+    <div id="drive-banner" class="glass-panel-dark">
+      <div class="b-top">
+        <span class="b-ic"></span>
+        <div class="b-info"><span class="b-dist"></span><span class="b-road"></span></div>
+      </div>
+      <div class="b-then"><span>Then</span><span class="b-then-ic"></span></div>
+    </div>
+    <div id="drive-speed">
+      <div class="limit"><b class="lim">–</b><span>km/h</span></div>
+      <div class="cur"><b>0</b><span>km/h</span></div>
+    </div>
+    <div id="drive-bottom" class="glass-panel">
+      <button class="pause" title="Pause / resume">⏸</button>
+      <div><span class="big remain">–</span> <span class="muted dist">–</span><br><span class="muted eta">–</span></div>
+      <button class="mode" title="Switch 2D / 3D view">2D</button>
+      <button class="theme" title="Day / night">🌙</button>
+      <button class="exit" title="Exit drive mode">✕</button>
+    </div>
+  </div>
+
+  <div id="readout" class="glass-panel-dark">zoom <b id="r-zoom">–</b> · tilt <b id="r-tilt">–</b>° · dir <b id="r-dir">–</b>°</div>
+
+  <div id="search" class="glass-panel">
+    <input id="goto" placeholder="Fly to  lat, lng   (e.g. 21.0369, 105.7809)" />
+    <span class="hint" id="goto-hint"></span>
+    <button id="goto-btn" title="Fly">➜</button>
+  </div>
+
+  <div id="controls">
+    <div id="btn-3d" class="glass-panel seg"><button data-m="2d">🗺️ 2D</button><button data-m="3d">⛰️ 3D</button></div>
+    <button id="btn-dark" class="glass-panel" title="Neon night mode">🌙 Dark</button>
+    <button id="btn-frame" class="glass-panel">Frame&nbsp;city</button>
+    <button id="btn-north" class="glass-panel" title="Reset bearing to north">⌖ North</button>
+    <button id="btn-route" class="glass-panel" title="Pick start &amp; destination on the map">🧭 Route</button>
+  </div>
+
+  <div id="legend" class="glass-panel">
+    <b>Layers</b>
+    <label><span class="sw" style="background:#5b6270"></span><input type="checkbox" id="t-roads" checked hidden>Roads &amp; lanes</label>
+    <label><span class="sw" style="background:#ffffff;border:1px solid #ccc"></span><input type="checkbox" id="t-mark" checked hidden>Lane markings</label>
+    <label><span class="sw" style="background:#d7dbe3"></span><input type="checkbox" id="t-turn" checked hidden>Turn arrows</label>
+    <label><span class="sw" style="background:#bcb6a6"></span><input type="checkbox" id="t-bldg" checked hidden>Buildings (3D)</label>
+    <label><span class="sw" style="background:#3aa0ff"></span><input type="checkbox" id="t-sat" hidden>Satellite base</label>
+  </div>
+
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+  <!-- three.js (UMD global THREE) — powers the true-3D car in drive mode, rendered
+       into MapLibre's WebGL context via a CustomLayerInterface. CDN, same as MapLibre. -->
+  <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+  <script>
+    // ============================================================================
+    // 3D City Map — MVP
+    // A read-only, Google-Maps-style slippy viewer of the HD scene produced by the
+    // hdmap tool (osm2streets lanes/markings + inferred 3D buildings). It loads the
+    // pre-baked GeoJSON layers straight from ./data and paints them with the SAME
+    // style as the editor — no server, no WASM, no editing. See README.md for the
+    // PMTiles path that replaces raw GeoJSON when this needs to scale past one city.
+    // ============================================================================
+
+    // WHOLE-CITY HD layers, streamed as standard {z}/{x}/{y} vector tiles from
+    // ./tiles (baked by bake-tiles + tile-join). Only the tiles under the current
+    // view are fetched — this is how the whole city renders smoothly (the F4Map
+    // approach). No PMTiles browser plugin: plain gzipped MVT over HTTP, the most
+    // reliable MapLibre path. Each osm2streets layer is a source-layer in the tiles.
+    const TILE_URL = location.origin + location.pathname.replace(/[^/]*$/, "") + "api/tiles/{z}/{x}/{y}.pbf?key=DEMO_KEY_123";
+    const META = "data/hanoi-meta.json";
+    // vector source id -> source-layer name inside the tiles
+    const SRC_LAYER = {
+      lanes: "lanes", markings: "markings", intersections: "intersections",
+      "turn-arrows": "turn_arrows", buildings: "buildings",
+    };
+    // bound panning to the baked city extent so you can't drift into empty tiles
+    const CITY_BOUNDS = [[105.752, 20.952], [105.889, 21.108]]; // full bake bbox
+
+    // ---- shared paint (copied verbatim from the editor so it looks identical) ---
+    const LYR = ["coalesce", ["get", "layer"], 0];
+    const sortKey = ["coalesce", ["get", "layer"], 0];
+    const laneTypeColor = [
+      "match", ["get", "type"],
+      "Driving", "#5b6270", "Parking", "#494f5b", "Sidewalk", "#8a90a0",
+      "Footway", "#8a90a0", "Shoulder", "#40454f", "Biking", "#2f6b4f",
+      "Bus", "#6b3a3a", "SharedLeftTurn", "#6b5f3a", "LightRail", "#5a4a6b",
+      "#565c68",
+    ];
+    // highway=service roads get a distinct surface so they read apart from public
+    // roads: ALLEY (service=alley — narrow Hanoi ngõ/hẻm, no 4-wheeler) in a warm
+    // tan, plain PRIVATE service in a muted warm-gray. Only the driving surface is
+    // tinted (not any sidewalk of a service road). `base` = the normal per-type
+    // colour used when `svc` is absent; passed in so day + dark share one shape.
+    const svcTint = (base, alley, priv) => [
+      "case",
+      ["all", ["==", ["get", "type"], "Driving"], ["==", ["get", "svc"], "alley"]], alley,
+      ["all", ["==", ["get", "type"], "Driving"], ["==", ["get", "svc"], "private"]], priv,
+      base,
+    ];
+    const laneColor = svcTint(laneTypeColor, "#c2a06a", "#8d939e");
+    const markColor = [
+      "match", ["get", "type"],
+      "center line", "#e8c84a", "vehicle stop line", "#ffffff",
+      "lane arrow", "#d7dbe3", "lane separator", "#c9cdd6",
+      "sidewalk corner", "#8a90a0", "#ffffff",
+    ];
+    // daytime building tint — per-block earth tones by a hash of the way id, so
+    // neighbours read as distinct. Dark mode swaps this whole expression for flat
+    // neon cyan. Kept as a const so both modes reference the same source of truth.
+    const bldgDayColor = [
+      "match", ["%", ["to-number", ["get", "osm_way_id"], 0], 6],
+      0, "#c7c0ac", 1, "#b3ac98", 2, "#c1b9a4",
+      3, "#a9a28e", 4, "#cac3b0", 5, "#b8b19d", "#bcb6a6",
+    ];
+    const bldgNeonColor = "#00e5ff";
+
+    // Railways (osm2streets type "LightRail") aren't routable and just confuse a
+    // road map, so drop them from the surface + casing. Combine with each band's
+    // layer filter.
+    const notRail = ["!=", ["get", "type"], "LightRail"];
+    const road = (flt) => ["all", flt, notRail];
+
+    // roads are split into casings (drawn first) then fills (drawn after) so the
+    // fills swallow every internal seam, leaving only the outer perimeter dark.
+    const bandEdges = (sfx, flt) => [{
+      id: "lanes-edge" + sfx, type: "line", source: "lanes", filter: road(flt),
+      layout: { "line-sort-key": sortKey, "line-join": "round", "line-cap": "round" },
+      paint: {
+        "line-color": "#1a1e25",
+        "line-width": ["interpolate", ["linear"], LYR, 0, 1.4, 1, 2.6, 4, 4.2],
+      },
+    }];
+    const bandFills = (sfx, flt) => [
+      {
+        id: "lanes" + sfx, type: "fill", source: "lanes", filter: road(flt),
+        layout: { "fill-sort-key": sortKey },
+        paint: { "fill-color": laneColor, "fill-opacity": 1 },
+      },
+      // service roads distinguished by FILL COLOUR alone: private = medium grey,
+      // alley = light brown. No stroke/outline (a line on a lane polygon traces its
+      // border, which on a narrow alley reads as an ugly double line).
+      {
+        id: "turn-left" + sfx, type: "fill", source: "lanes",
+        filter: ["all", flt, ["==", ["get", "type"], "Driving"],
+          ["in", "left", ["to-string", ["get", "allowed_turns"]]]],
+        layout: { "fill-sort-key": sortKey },
+        paint: { "fill-color": "#2ea6a6", "fill-opacity": 0.55 },
+      },
+      {
+        id: "turn-right" + sfx, type: "fill", source: "lanes",
+        filter: ["all", flt, ["==", ["get", "type"], "Driving"],
+          ["in", "right", ["to-string", ["get", "allowed_turns"]]]],
+        layout: { "fill-sort-key": sortKey },
+        paint: { "fill-color": "#c9772e", "fill-opacity": 0.55 },
+      },
+      {
+        id: "markings" + sfx, type: "fill", source: "markings", filter: flt,
+        minzoom: 16, // heavy layer — only paint zoomed in close, keeps panning smooth
+        layout: { "fill-sort-key": sortKey },
+        paint: { "fill-color": markColor, "fill-opacity": 0.9 },
+      },
+      {
+        id: "turn-arrows" + sfx, type: "symbol", source: "turn-arrows", filter: flt,
+        minzoom: 16,
+        layout: {
+          "icon-image": ["get", "turns"], "icon-rotate": ["get", "bearing"],
+          "icon-rotation-alignment": "map",
+          "icon-size": ["interpolate", ["exponential", 2], ["zoom"], 15, 0.05, 19, 0.8, 22, 6.4],
+          "icon-allow-overlap": true, "icon-ignore-placement": true,
+          "symbol-sort-key": sortKey,
+        },
+      },
+    ];
+
+    const styleLayers = [
+      { id: "bg", type: "background", paint: { "background-color": "#e7ecdb" } },
+      { id: "satellite", type: "raster", source: "sat", layout: { visibility: "none" } },
+      // Permanent basemap UNDERLAY. The HD vector layers (roads/buildings) draw on
+      // TOP of this; wherever we don't bake HD data (river banks, floodplain, parks,
+      // anything outside our lane/building coverage) the basemap fills it in with
+      // real cartography. This replaces the old baked water/green context layers —
+      // the basemap owns all of that now, so nothing renders as blank beige ground.
+      // Stays visible at every zoom (source goes to z20, overzooms above that).
+      { id: "basemap-2d", type: "raster", source: "basemap" },
+      // dark counterpart — hidden until dark mode / satellite swaps it out. CARTO
+      // Dark Matter has near-black land, which vanished against the neon-night
+      // ground; lift the black floor so streets/land read as dark grey and the
+      // basemap is actually visible (incl. during 3D drive).
+      {
+        id: "basemap-2d-dark", type: "raster", source: "basemapDark",
+        layout: { visibility: "none" },
+        paint: { "raster-brightness-min": 0.16, "raster-contrast": 0.05 },
+      },
+      // Junction asphalt UNDERLAY: a wide gray line on the intersection polygons,
+      // drawn first so it grows the paved area outward to meet the lane polygons.
+      // osm2streets leaves thin triangular slivers at junction corners where the lane
+      // and intersection polygons don't quite tile; without this they show the beige
+      // basemap through the gap. The lane/intersection FILLS draw on top, so this only
+      // shows in the slivers. Tune line-width if junctions look too fat / still gapped.
+      {
+        id: "inter-grow", type: "line", source: "intersections",
+        filter: ["all", ["!=", ["get", "intersection_kind"], "MapEdge"], ["<", LYR, 1]],
+        layout: { "line-join": "round", "line-cap": "round", "line-sort-key": sortKey },
+        paint: { "line-color": "#5b6270",
+          "line-width": ["interpolate", ["exponential", 2], ["zoom"], 15, 0.8, 19, 6, 22, 22] },
+      },
+      // intersection casing then fill (fuse road + junction into one surface)
+      {
+        id: "inter-edge", type: "line", source: "intersections",
+        filter: ["all", ["!", ["in", ["get", "intersection_kind"], ["literal", ["Connection", "MapEdge"]]]], ["<", LYR, 1]],
+        layout: { "line-sort-key": sortKey, "line-join": "round" },
+        paint: { "line-color": "#1a1e25", "line-width": 1.4, "line-opacity": 0.9 },
+      },
+      ...bandEdges("", ["<", LYR, 1]),
+      {
+        id: "intersections", type: "fill", source: "intersections",
+        // ground junctions only; elevated ones (layer>=1) are extruded below
+        filter: ["all", ["!=", ["get", "intersection_kind"], "MapEdge"], ["<", LYR, 1]],
+        layout: { "fill-sort-key": sortKey },
+        paint: {
+          "fill-color": "#5b6270", // one continuous asphalt surface (signals shown by icon)
+          "fill-opacity": 1,
+        },
+      },
+      ...bandFills("", ["<", LYR, 1]),
+      // ELEVATED roads (bridges / flyovers) are drawn as a smooth SLOPED three.js deck
+      // mesh (see elevRoadLayer below) — fill-extrusion can only make flat slabs, which
+      // stair-step up a ramp. The elevated ways' flat tile lanes don't draw here (the
+      // ground band is layer<1), so the mesh owns them with no doubling.
+      {
+        id: "inter-signal", type: "symbol", source: "intersections",
+        filter: ["all", ["==", ["get", "control"], "Signalled"], ["<", LYR, 1]], minzoom: 15,
+        layout: {
+          "icon-image": "traffic-signal",
+          "icon-size": ["interpolate", ["exponential", 2], ["zoom"], 15, 0.16, 19, 0.8],
+          "icon-allow-overlap": true, "icon-ignore-placement": true,
+        },
+      },
+      // 3D buildings — inferred height; flat when top-down, rises once tilted.
+      // Gated to z14+ so low-zoom city panning stays light (F4Map does the same:
+      // buildings appear as you zoom into a neighbourhood).
+      {
+        id: "buildings-3d", type: "fill-extrusion", source: "buildings", minzoom: 14,
+        paint: {
+          "fill-extrusion-color": bldgDayColor,
+          "fill-extrusion-height": ["coalesce", ["get", "height"], 6],
+          "fill-extrusion-base": ["coalesce", ["get", "base"], 0],
+          "fill-extrusion-opacity": 1,
+          "fill-extrusion-vertical-gradient": true,
+        },
+      },
+      // neon footprint outline — MapLibre has no bloom, so the "glow" is faked
+      // with a bright cyan line on each building's base. Hidden until dark mode.
+      {
+        id: "buildings-edge", type: "line", source: "buildings", minzoom: 14,
+        layout: { visibility: "none", "line-join": "round" },
+        paint: {
+          "line-color": "#5ffbf1",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 15, 0.4, 19, 1.2],
+          "line-opacity": 0.4,
+        },
+      },
+    ];
+
+    // remap each HD layer from its GeoJSON source id to the single vector source
+    // + matching source-layer inside the tiles (keeps the paint block untouched)
+    // The HD osm2streets layers only make sense zoomed in, so they render ONLY
+    // above the 2D->3D switch zoom (SWITCH_Z). Below it, the flat street basemap
+    // shows instead. (Layers with a higher minzoom, e.g. markings at 16, keep it.)
+    const SWITCH_Z = 15;
+    for (const L of styleLayers) {
+      if (L.source && SRC_LAYER[L.source]) {
+        L["source-layer"] = SRC_LAYER[L.source];
+        L.source = "hd";
+        L.minzoom = Math.max(SWITCH_Z, L.minzoom || 0);
+      }
+    }
+
+    // sky gradients: daytime (blue) and neon nightfall (deep navy → dusky horizon)
+    const DAY_SKY = {
+      "sky-color": "#9ec5f0", "sky-horizon-blend": 0.6,
+      "horizon-color": "#dce6ec", "horizon-fog-blend": 0.6,
+      "fog-color": "#e7ecdb", "fog-ground-blend": 0.2, "atmosphere-blend": 0.5,
+    };
+    const NIGHT_SKY = {
+      "sky-color": "#05081a", "sky-horizon-blend": 0.7,
+      "horizon-color": "#141d3a", "horizon-fog-blend": 0.6,
+      "fog-color": "#0a0d12", "fog-ground-blend": 0.25, "atmosphere-blend": 0.6,
+    };
+
+    const map = new maplibregl.Map({
+      container: "map",
+      center: [105.8520, 21.0310], // Hoan Kiem lake — dense central Hanoi
+      zoom: 16,       // open in 3D HD mode (above the 2D->3D switch)
+      minZoom: 12,
+      maxZoom: 19,   // z17 tiles overzoom cleanly to 19; past that markings blur
+      maxBounds: CITY_BOUNDS,
+      pitch: 55,      // 3D by default — this is the whole point of the MVP
+      bearing: -18,
+      maxPitch: 80,
+      doubleClickZoom: false, // repurposed: double-click copies the coordinate
+      hash: true,     // F4Map-style: zoom/lat/lng/bearing/pitch live in the URL
+      style: {
+        version: 8,
+        sources: {
+          sat: {
+            type: "raster", tileSize: 256,
+            tiles: ["https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+            attribution: "Imagery © Esri, Maxar, Earthstar Geographics",
+          },
+          // flat street map (CARTO Voyager) for the 2D zoomed-out view
+          basemap: {
+            type: "raster", tileSize: 256, maxzoom: 20,
+            tiles: [
+              "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+              "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+              "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+            ],
+            attribution: "© OpenStreetMap contributors © CARTO",
+          },
+          // dark 2D basemap (CARTO Dark Matter) — the night-mode counterpart of
+          // Voyager, same tile scheme, swapped in when dark mode is on.
+          basemapDark: {
+            type: "raster", tileSize: 256, maxzoom: 20,
+            tiles: [
+              "https://a.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png",
+              "https://b.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png",
+              "https://c.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png",
+            ],
+            attribution: "© OpenStreetMap contributors © CARTO",
+          },
+          hd: {
+            type: "vector",
+            tiles: [TILE_URL],
+            minzoom: 15, maxzoom: 18, // HD tiles are z15-18 (2D basemap below 15)
+            attribution: "© OpenStreetMap contributors · osm2streets",
+          },
+        },
+        layers: styleLayers,
+        light: { anchor: "map", color: "#ffffff", intensity: 0.4, position: [1.2, 210, 30] },
+        sky: DAY_SKY,
+      },
+    });
+
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+    map.addControl(new maplibregl.ScaleControl({ unit: "metric" }));
+    map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: true }), "top-right");
+
+    // live camera readout (zoom / tilt = pitch / dir = bearing), F4Map-style
+    const rZoom = document.getElementById("r-zoom");
+    const rTilt = document.getElementById("r-tilt");
+    const rDir = document.getElementById("r-dir");
+    const updateReadout = () => {
+      rZoom.textContent = map.getZoom().toFixed(1);
+      rTilt.textContent = Math.round(map.getPitch());
+      rDir.textContent = ((Math.round(map.getBearing()) % 360) + 360) % 360;
+    };
+    map.on("move", updateReadout);
+    updateReadout();
+
+    let dataBounds = CITY_BOUNDS;
+    fetch(META).then((r) => r.json()).then((m) => {
+      if (m.bbox) dataBounds = [[m.bbox[0], m.bbox[1]], [m.bbox[2], m.bbox[3]]];
+    }).catch(() => {});
+
+    // ---- turn-arrow + traffic-signal icons, drawn on demand (same as editor) ----
+    const makeArrowIcon = (key) => {
+      const S = 64, cx = S / 2, midY = S * 0.52, baseY = S - 6, topY = 8;
+      const cv = document.createElement("canvas"); cv.width = S; cv.height = S;
+      const g = cv.getContext("2d");
+      g.strokeStyle = "#f2f4f8"; g.fillStyle = "#f2f4f8";
+      g.lineWidth = 7; g.lineCap = "round"; g.lineJoin = "round";
+      const head = (x, y, ang) => {
+        const dx = Math.sin(ang), dy = -Math.cos(ang), L = 15, W = 10;
+        const bx = x - dx * L, by = y - dy * L, px = -dy, py = dx;
+        g.beginPath(); g.moveTo(x, y);
+        g.lineTo(bx + px * W, by + py * W); g.lineTo(bx - px * W, by - py * W);
+        g.closePath(); g.fill();
+      };
+      g.beginPath(); g.moveTo(cx, baseY); g.lineTo(cx, midY); g.stroke();
+      for (const d of key.split("_")) {
+        if (d === "through") {
+          g.beginPath(); g.moveTo(cx, midY); g.lineTo(cx, topY + 6); g.stroke(); head(cx, topY, 0);
+        } else if (d === "left") {
+          g.beginPath(); g.moveTo(cx, midY); g.lineTo(14, midY - 4); g.stroke(); head(8, midY - 4, -Math.PI / 2);
+        } else if (d === "right") {
+          g.beginPath(); g.moveTo(cx, midY); g.lineTo(S - 14, midY - 4); g.stroke(); head(S - 8, midY - 4, Math.PI / 2);
+        }
+      }
+      return g.getImageData(0, 0, S, S);
+    };
+    const makeSignalIcon = () => {
+      const S = 64, cv = document.createElement("canvas"); cv.width = S; cv.height = S;
+      const g = cv.getContext("2d");
+      const w = 26, h = 54, x = (S - w) / 2, y = (S - h) / 2, r = 9;
+      g.fillStyle = "#14171d"; g.strokeStyle = "#eef1f6"; g.lineWidth = 3.5;
+      g.beginPath(); g.moveTo(x + r, y);
+      g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+      g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r);
+      g.closePath(); g.fill(); g.stroke();
+      const cx = S / 2, rad = 6.5;
+      [["#ff5b5b", y + 13], ["#ffcf4a", y + 27], ["#4ddc7a", y + 41]].forEach(([c, cy]) => {
+        g.beginPath(); g.arc(cx, cy, rad, 0, Math.PI * 2); g.fillStyle = c; g.fill();
+      });
+      return g.getImageData(0, 0, S, S);
+    };
+    map.on("styleimagemissing", (e) => {
+      if (map.hasImage(e.id)) return;
+      try {
+        const img = e.id === "traffic-signal" ? makeSignalIcon() : makeArrowIcon(e.id);
+        map.addImage(e.id, img, { pixelRatio: 2 });
+      } catch (_) {}
+    });
+
+    // ---- click a road / building for a quick info popup (read-only) ----
+    map.on("load", () => {
+      map.on("click", (e) => {
+        if (NAV.pickMode) return; // route-pick mode owns clicks — no info popup
+        const f = map.queryRenderedFeatures(e.point, {
+          layers: ["buildings-3d", "lanes"],
+        })[0];
+        if (!f) return;
+        const p = f.properties || {};
+        let html;
+        if (f.layer.id.startsWith("buildings")) {
+          // kind (apartments/house/commercial…) titles the popup; osm_type lets us
+          // build a correct osm.org link (a building can be a way OR a relation).
+          const kind = p.building && p.building !== "yes" ? p.building : "Building";
+          const osmType = p.osm_type || "way";
+          const osmLink = p.osm_way_id
+            ? `<br><a href="https://www.openstreetmap.org/${osmType}/${p.osm_way_id}" target="_blank" rel="noopener">${osmType} ${p.osm_way_id}</a>`
+            : "";
+          html = `<b>${kind[0].toUpperCase() + kind.slice(1)}</b><br>${p.name ? p.name + "<br>" : ""}` +
+            `height ≈ ${Math.round(p.height ?? 6)} m` +
+            `${p.height_source ? " (" + p.height_source + ")" : ""}` +
+            `${p.levels ? "<br>" + p.levels + " levels" : ""}` +
+            `${p.min_level ? " (from level " + p.min_level + ")" : ""}` +
+            osmLink;
+        } else {
+          html = `<b>${p.type || "Road"} lane</b>` +
+            `${p.width ? "<br>width ≈ " + (+p.width).toFixed(1) + " m" : ""}` +
+            `${p.speed_limit ? "<br>speed " + p.speed_limit : ""}`;
+        }
+        new maplibregl.Popup({ closeButton: false })
+          .setLngLat(e.lngLat).setHTML(html).addTo(map);
+      });
+      map.on("mouseenter", "buildings-3d", () => { if (!NAV.pickMode) map.getCanvas().style.cursor = "pointer"; });
+      map.on("mouseleave", "buildings-3d", () => { if (!NAV.pickMode) map.getCanvas().style.cursor = ""; });
+    });
+
+    // ---- UI wiring ----
+    let gotoMarker = null; // the single "fly to" pin — replaced (not stacked) each search
+    const goTo = () => {
+      const hint = document.getElementById("goto-hint");
+      const raw = document.getElementById("goto").value.trim();
+      const m = raw.match(/^(-?\d+(?:\.\d+)?)\s*[,\s]\s*(-?\d+(?:\.\d+)?)$/);
+      if (!m) { hint.textContent = "lat, lng"; return; }
+      const lat = +m[1], lng = +m[2];
+      if (Math.abs(lat) > 90 || Math.abs(lng) > 180) { hint.textContent = "range"; return; }
+      hint.textContent = "";
+      // in route-pick mode, a typed coordinate drops the next A/B point precisely
+      if (NAV.pickMode && NAV.graph) {
+        map.flyTo({ center: [lng, lat], zoom: 17, speed: 1.4 });
+        placePoint({ lng, lat });
+        document.getElementById("goto").value = "";
+        return;
+      }
+      map.flyTo({ center: [lng, lat], zoom: 18, pitch: 55, speed: 1.4 });
+      if (gotoMarker) gotoMarker.remove(); // drop the previous pin first
+      gotoMarker = new maplibregl.Marker({ color: "#2f6bd6" }).setLngLat([lng, lat]).addTo(map);
+    };
+    document.getElementById("goto-btn").onclick = goTo;
+    document.getElementById("goto").addEventListener("keydown", (e) => e.key === "Enter" && goTo());
+
+    // double-click anywhere on the canvas -> copy "lat, lng" at the cursor to the
+    // clipboard (same order/precision as the Fly-to box). Default dbl-click zoom is
+    // disabled above so this is a pure copy. A small toast confirms it. (Ported
+    // from the editor; clipboard works here because Pages serves over HTTPS.)
+    const copyToast = document.createElement("div");
+    copyToast.id = "copy-toast";
+    copyToast.style.cssText =
+      "position:absolute;z-index:9;pointer-events:none;padding:5px 9px;border-radius:7px;" +
+      "background:rgba(20,26,38,.92);color:#e8edf4;font:600 12px system-ui,sans-serif;" +
+      "border:1px solid rgba(74,108,255,.5);box-shadow:0 4px 14px rgba(0,0,0,.4);" +
+      "opacity:0;transition:opacity .15s;white-space:nowrap;transform:translate(-50%,-140%)";
+    document.getElementById("map").appendChild(copyToast);
+    let copyToastT = null;
+    map.on("dblclick", async (e) => {
+      if (NAV.pickMode) return; // in route-pick mode, clicks place points instead
+      const coord = `${e.lngLat.lat.toFixed(6)}, ${e.lngLat.lng.toFixed(6)}`; // lat, lng
+      let ok = true;
+      try { await navigator.clipboard.writeText(coord); }
+      catch (_) { ok = false; }
+      copyToast.textContent = (ok ? "📋 copied " : "⚠ copy blocked — ") + coord;
+      copyToast.style.left = e.point.x + "px";
+      copyToast.style.top = e.point.y + "px";
+      copyToast.style.opacity = "1";
+      if (copyToastT) clearTimeout(copyToastT);
+      copyToastT = setTimeout(() => (copyToast.style.opacity = "0"), 1300);
+    });
+
+    // ---- auto 2D<->3D by zoom (like F4Map / Google) --------------------------
+    // Below the switch zoom the map is flat 2D (street basemap); above it the
+    // camera tilts into the 3D HD view. Only fires when crossing the threshold,
+    // so it never fights an in-progress zoom. The 3D button is a manual override.
+    const btn3d = document.getElementById("btn-3d");
+    const segBtns = btn3d.querySelectorAll("button");
+    let is3d = map.getPitch() > 5;
+    // highlight whichever half matches the current view (no ambiguous single label);
+    // the GO button follows the same mode so it launches into what you're seeing
+    const syncBtn3d = () => {
+      segBtns.forEach((b) => b.classList.toggle("active", (b.dataset.m === "3d") === is3d));
+      const go = document.querySelector("#nav-panel .np-go");
+      if (go) go.textContent = `▶ GO — drive in ${is3d ? "3D" : "2D"}`;
+    };
+    syncBtn3d();
+    const setMode = (want3d, ms) => {
+      if (want3d === is3d) return;
+      is3d = want3d;
+      syncBtn3d();
+      map.easeTo({ pitch: is3d ? 55 : 0, duration: ms });
+      // re-render the route preview for the new mode (3D ribbon vs flat line)
+      if (window._showPreviewRoute) window._showPreviewRoute();
+    };
+    map.on("zoom", () => setMode(map.getZoom() > SWITCH_Z, 400));
+    segBtns.forEach((b) => { b.onclick = () => setMode(b.dataset.m === "3d", 500); });
+    document.getElementById("btn-frame").onclick = () => {
+      map.fitBounds(dataBounds, { padding: 40, pitch: 0, maxZoom: 16 });
+    };
+    document.getElementById("btn-north").onclick = () => map.easeTo({ bearing: 0, duration: 500 });
+
+    // ---- neon night mode -----------------------------------------------------
+    // A reversible theme: gray-black ground, nightfall sky, cyan buildings with a
+    // faked neon edge, and a static starfield when tilted. Pure client-side paint
+    // swap — no re-bake. Day is the default; the 🌙 button flips it.
+    const btnDark = document.getElementById("btn-dark");
+    const starsEl = document.getElementById("stars");
+    let darkOn = false;
+
+    // Underlay selection: exactly ONE of {satellite, light street, dark street} is
+    // shown beneath the HD layers. Satellite (the "Satellite base" toggle) wins;
+    // otherwise the street basemap follows the day/night theme.
+    let satOn = false;
+    const updateBase = () => {
+      const v = (id, on) => { if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none"); };
+      v("satellite", satOn);
+      v("basemap-2d", !satOn && !darkOn);
+      v("basemap-2d-dark", !satOn && darkOn);
+    };
+
+    // build a static starfield once (no animation — "static stars" as asked).
+    // Deterministic-ish sparse dots across the upper sky band.
+    (function seedStars() {
+      const N = 170;
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < N; i++) {
+        const s = document.createElement("i");
+        const size = (0.6 + Math.random() * 1.7).toFixed(2);
+        s.style.left = (Math.random() * 100).toFixed(2) + "%";
+        s.style.top = (Math.random() * 100).toFixed(2) + "%";
+        s.style.width = size + "px";
+        s.style.height = size + "px";
+        s.style.opacity = (0.35 + Math.random() * 0.6).toFixed(2);
+        frag.appendChild(s);
+      }
+      starsEl.appendChild(frag);
+    })();
+
+    // stars only make sense in dark mode AND when the sky fills the top of the
+    // screen (camera tilted). Driven off the actual pitch so it tracks any tilt.
+    const updateStars = () => starsEl.classList.toggle("on", darkOn && map.getPitch() > 8);
+    map.on("pitch", updateStars);
+
+    const applyTheme = (dark) => {
+      const set = (id, prop, val) => { if (map.getLayer(id)) map.setPaintProperty(id, prop, val); };
+      const vis = (id, on) => { if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none"); };
+      // ground (shows only while basemap tiles load; the basemap owns land cover)
+      set("bg", "background-color", dark ? "#0a0d12" : "#e7ecdb");
+      // roads/junctions: in dark they need to sit CLEARLY above the near-black
+      // ground (else the ways vanish), so a mid slate-blue surface + a faint cyan
+      // casing rim that ties them into the neon theme instead of receding.
+      // service roads stay distinct in dark too (warm tones over the slate base)
+      const laneColorDark = svcTint("#333d4d", "#c2a06a", "#8d939e");
+      set("lanes", "fill-color", dark ? laneColorDark : laneColor);
+      // private service keeps its bold white border in both themes (high contrast)
+      set("intersections", "fill-color", dark ? "#333d4d" : "#5b6270");
+      for (const id of ["lanes-edge", "inter-edge"])
+        set(id, "line-color", dark ? "#2aa7b8" : "#1a1e25");
+      // the elevated three.js deck recolours via its own material (see setDeckTheme)
+      if (window._setDeckTheme) window._setDeckTheme(dark);
+      if (window._setDetailTheme) window._setDetailTheme(dark);
+      // buildings: SOLID like day (opaque, day-style vertical shading so walls
+      // read as real volumes, not glass boxes) — only the colour changes to cyan.
+      set("buildings-3d", "fill-extrusion-color", dark ? bldgNeonColor : bldgDayColor);
+      set("buildings-3d", "fill-extrusion-vertical-gradient", true);
+      // solid in both themes; but stay invisible (opacity 0) where the three.js mesh
+      // has taken over, so the two don't double up (it's still queryable for popups)
+      set("buildings-3d", "fill-extrusion-opacity", bldg3dOn ? 0 : 1);
+      if (window._setBldgTheme) window._setBldgTheme(dark); // recolour the 3D mesh
+      vis("buildings-edge", dark); // keep a faint neon rim, dialled down (see layer paint)
+      updateBase(); // street basemap follows the theme (unless satellite is on)
+      // sky only — keep the day sun so cyan walls stay lit/solid (flattening the
+      // light was what darkened the walls and made them look see-through)
+      map.setSky(dark ? NIGHT_SKY : DAY_SKY);
+      updateStars();
+      if (typeof styleRoute === "function") styleRoute(dark); // recolour route ribbon
+    };
+
+    btnDark.onclick = () => {
+      darkOn = !darkOn;
+      btnDark.classList.toggle("on", darkOn);
+      btnDark.innerHTML = darkOn ? "☀️ Day" : "🌙 Dark";
+      applyTheme(darkOn);
+    };
+
+    // layer toggles. A trailing function arg is an onChange(checked) callback, so a
+    // control that also drives non-MapLibre state (e.g. the three.js building mesh)
+    // stays in ONE listener instead of a second, order-dependent one on the element.
+    const toggle = (id, ...layers) => {
+      const onChange = typeof layers[layers.length - 1] === "function" ? layers.pop() : null;
+      const cb = document.getElementById(id);
+      cb.parentElement.addEventListener("click", () => {
+        cb.checked = !cb.checked;
+        const v = cb.checked ? "visible" : "none";
+        layers.forEach((l) => map.getLayer(l) && map.setLayoutProperty(l, "visibility", v));
+        if (onChange) onChange(cb.checked);
+      });
+    };
+    map.on("load", () => {
+      toggle("t-roads", "lanes", "lanes-edge", "intersections", "inter-edge", "inter-grow");
+      toggle("t-mark", "markings");
+      toggle("t-turn", "turn-left", "turn-right", "turn-arrows");
+      // t-bldg drives BOTH the fill-extrusion layer and the three.js mesh (via bldgVisible)
+      toggle("t-bldg", "buildings-3d", (on) => { bldgVisible = on; map.triggerRepaint(); });
+      // satellite base toggle — swaps the underlay between the street basemap and
+      // aerial imagery (exactly one is shown; HD layers stay on top of whichever).
+      const sat = document.getElementById("t-sat");
+      sat.parentElement.addEventListener("click", () => {
+        sat.checked = !sat.checked;
+        satOn = sat.checked;
+        updateBase();
+      });
+      addElevLayer();        // smooth 3D elevated-road deck (if roads_3d already fetched)
+      addElevDetailLayer();  // HD lane/marking/junction detail on the bridge decks
+      addDriveRouteLayer();  // route ribbon layer — used by BOTH preview and drive
+      addBldgLayer();        // detailed 3D buildings (roofs/colours) above BLDG_Z
+      map.on("moveend", updateBldgMode); // new tiles in view → rebuild the mesh
+      map.on("zoom", updateBldgMode);    // cross the fill-extrusion ↔ mesh handoff
+      updateBldgMode();
+    });
+
+    // ======================================================================
+    // NAVIGATION — client-side routing on the prebaked graph (data/graph.json).
+    // Vector tiles are clipped at tile borders, so we can't route on them; this
+    // graph carries full, unclipped connectivity. Loaded lazily (first nav use
+    // or first idle) so it never competes with the initial tile load.
+    //
+    // Task 3: load + build adjacency. Later tasks add snap / A* / UI.
+    //
+    // ETA realism (Task 7 enhancement): posted maxspeed is free-flow and vastly
+    // overstates real urban travel — a "50 km/h" street in dense Hanoi averages
+    // ~30 with lights/traffic/scooters, residential ~18. So the ETA uses this
+    // EFFECTIVE-speed model (typical achieved average by class), NOT the routing
+    // speed. Routing preference still uses the free-flow speeds in graph.meta.
+    // Tune these freely — they only affect the time readout, not the chosen path.
+    // ======================================================================
+    const ETA_SPEED_KMH = {
+      motorway: 65, trunk: 45, primary: 30, secondary: 26, tertiary: 22,
+      unclassified: 20, residential: 18, living_street: 8, service: 10,
+      busway: 20, ladder: 6,
+      motorway_link: 45, trunk_link: 30, primary_link: 22,
+      secondary_link: 20, tertiary_link: 18,
+    };
+
+    // --- turn-by-turn helpers (Task 8) ---
+    // compass bearing a->b in degrees (0=N, 90=E); a,b are [lng,lat]
+    const bearingDeg = (a, b) => {
+      const R = Math.PI / 180;
+      const y = Math.sin((b[0] - a[0]) * R) * Math.cos(b[1] * R);
+      const x = Math.cos(a[1] * R) * Math.sin(b[1] * R) - Math.sin(a[1] * R) * Math.cos(b[1] * R) * Math.cos((b[0] - a[0]) * R);
+      return (Math.atan2(y, x) / R + 360) % 360;
+    };
+    const COMPASS = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"];
+    const compassDir = (brg) => COMPASS[Math.round(brg / 45) % 8];
+    // classify a signed heading change (deg, +right/-left) into a maneuver
+    const classifyTurn = (delta) => {
+      const ad = Math.abs(delta), side = delta > 0 ? "right" : "left";
+      if (ad < 20) return { turn: "straight", text: "Continue straight" };
+      if (ad < 45) return { turn: "slight-" + side, text: "Slight " + side };
+      if (ad <= 135) return { turn: side, text: "Turn " + side };
+      if (ad < 160) return { turn: "sharp-" + side, text: "Sharp " + side };
+      return { turn: "uturn", text: "Make a U-turn" };
+    };
+    // Build an ordered maneuver list from oriented legs. A maneuver is emitted at
+    // a real turn (|delta| >= threshold) or a genuine street rename; straight
+    // same-street segments collapse into the running leg. Each maneuver's `dist`
+    // is how far you travel on it before the next maneuver.
+    const buildManeuvers = (legs) => {
+      if (!legs.length) return [];
+      const TH = 22; // deg — below this counts as "straight"
+      const f = legs[0];
+      const startBrg = bearingDeg(f.ge[0], f.ge[1]);
+      const M = [{ turn: "depart", instruction: `Head ${compassDir(startBrg)}${f.name ? " on " + f.name : ""}`, name: f.name, dist: 0, spd: f.spd, lim: f.lim }];
+      let cur = M[0];
+      for (let i = 1; i < legs.length; i++) {
+        const prev = legs[i - 1], leg = legs[i], pg = prev.ge, lg = leg.ge;
+        const inB = bearingDeg(pg[pg.length - 2], pg[pg.length - 1]);
+        const outB = bearingDeg(lg[0], lg[1]);
+        const delta = ((outB - inB + 540) % 360) - 180; // [-180,180], + = right
+        cur.dist += prev.len;
+        const bigTurn = Math.abs(delta) >= TH;
+        const rename = prev.name && leg.name && prev.name !== leg.name;
+        if (bigTurn || rename) {
+          const c = classifyTurn(delta);
+          const instruction = bigTurn ? `${c.text}${leg.name ? " onto " + leg.name : ""}` : `Continue onto ${leg.name}`;
+          cur = { turn: bigTurn ? c.turn : "continue", instruction, name: leg.name, dist: 0, spd: leg.spd, lim: leg.lim };
+          M.push(cur);
+        }
+      }
+      cur.dist += legs[legs.length - 1].len;
+      M.push({ turn: "arrive", instruction: "Arrive at destination", name: null, dist: 0 });
+      return M;
+    };
+
+    const NAV = {
+      graph: null,          // parsed graph.json
+      adj: null,            // Map<nodeIdx, Array<{to, e, len, cls}>>  (oneway-aware)
+      speed: null,          // per-class speed (m/s), aligned to graph.classes
+      loading: null,        // in-flight promise (so we load exactly once)
+
+      ensureGraph() {
+        if (this.graph) return Promise.resolve(this.graph);
+        if (this.loading) return this.loading;
+        this.loading = fetch("api/graph?key=DEMO_KEY_123")
+          .then((r) => { if (!r.ok) throw new Error(`graph.json ${r.status}`); return r.json(); })
+          .then((g) => { this.build(g); return this.graph; })
+          .catch((err) => { this.loading = null; console.warn("[nav] graph load failed:", err); throw err; });
+        return this.loading;
+      },
+
+      build(g) {
+        this.graph = g;
+        // per-class ROUTING speed in m/s (km/h ÷ 3.6); fall back to residential
+        const fallback = (g.meta.speeds_kmh.residential || 30) / 3.6;
+        this.speed = g.classes.map((c) => (g.meta.speeds_kmh[c] ? g.meta.speeds_kmh[c] / 3.6 : fallback));
+        // per-class EFFECTIVE speed for the ETA (realistic urban averages, m/s),
+        // capped so it never exceeds the free-flow routing speed
+        const etaFallback = ETA_SPEED_KMH.residential / 3.6;
+        this.etaSpeed = g.classes.map((c, i) =>
+          Math.min(this.speed[i], (ETA_SPEED_KMH[c] || ETA_SPEED_KMH.residential) / 3.6) || etaFallback);
+        // per-EDGE assigned speed (m/s), Valhalla-style — set by the baker. Preferred
+        // over the per-class speed for routing cost, ETA, and the drive HUD limit.
+        this.edgeSpeed = g.edge_speeds ? g.edge_speeds.map((k) => k / 3.6) : null;
+        // per-VERTEX altitude (m), from the shared elevation.mjs baker (sparse: only
+        // edges that leave the ground). Index every elevated vertex by its lng,lat so
+        // both the drive car and the 3D road ribbons can look up exact heights.
+        this.edgeZ = g.edge_z || {};
+        this.layerHeight = (g.meta && g.meta.layer_height) || 5;
+        this.zByCoord = new Map();
+        const zKey = (lng, lat) => lng.toFixed(6) + "," + lat.toFixed(6);
+        this.zAtCoord = (lng, lat) => this.zByCoord.get(zKey(lng, lat)) || 0;
+        for (const e in this.edgeZ) {
+          const z = this.edgeZ[e], geom = this.fullGeom(+e);
+          for (let i = 0; i < geom.length && i < z.length; i++) {
+            const k = zKey(geom[i][0], geom[i][1]), prev = this.zByCoord.get(k);
+            // shared endpoints belong to the lowest tier (junction rule) — keep the min
+            if (prev === undefined || z[i] < prev) this.zByCoord.set(k, z[i]);
+          }
+        }
+        // build oneway-aware adjacency: node index -> outgoing edges
+        const adj = new Map();
+        const link = (from, to, e, len, cls) => {
+          let arr = adj.get(from);
+          if (!arr) { arr = []; adj.set(from, arr); }
+          arr.push({ to, e, len, cls });
+        };
+        g.edges.forEach((ed, e) => {
+          const a = ed[0], b = ed[1], len = ed[2], cls = ed[3], oneway = ed[4];
+          if (oneway === 0 || oneway === 1) link(a, b, e, len, cls); // a->b
+          if (oneway === 0 || oneway === 2) link(b, a, e, len, cls); // b->a
+        });
+        this.adj = adj;
+      },
+
+      nodeLngLat(i) { return [this.graph.nodes[i * 2], this.graph.nodes[i * 2 + 1]]; },
+      edgeName(e) { const ed = this.graph.edges[e]; return ed[5] >= 0 ? this.graph.names[ed[5]] : null; },
+
+      // full render geometry of an edge: [ [lng,lat], ... ] = node a + interior + node b
+      fullGeom(e) {
+        const ed = this.graph.edges[e], n = this.graph.nodes;
+        const pts = [[n[ed[0] * 2], n[ed[0] * 2 + 1]]];
+        for (let i = 6; i < ed.length; i += 2) pts.push([ed[i], ed[i + 1]]);
+        pts.push([n[ed[1] * 2], n[ed[1] * 2 + 1]]);
+        return pts;
+      },
+
+      // Snap a lng/lat to the nearest point on any edge. Brute-force over all
+      // segments in a local planar frame (longitude scaled by cos(lat)); ~164k
+      // segment tests, a few ms per click, so no spatial index needed yet.
+      // Returns { e, lng, lat, node, distM } — node = nearer edge endpoint.
+      snap(lng, lat) {
+        const g = this.graph, n = g.nodes, edges = g.edges;
+        const mx = Math.cos(lat * Math.PI / 180);
+        let bestD2 = Infinity, bE = -1, bLng = 0, bLat = 0;
+        for (let e = 0; e < edges.length; e++) {
+          const ed = edges[e];
+          let plng = n[ed[0] * 2], plat = n[ed[0] * 2 + 1];
+          const nInt = (ed.length - 6) / 2;
+          for (let k = 0; k <= nInt; k++) {
+            const clng = k < nInt ? ed[6 + k * 2] : n[ed[1] * 2];
+            const clat = k < nInt ? ed[6 + k * 2 + 1] : n[ed[1] * 2 + 1];
+            const ax = (plng - lng) * mx, ay = plat - lat;
+            const dx = (clng - plng) * mx, dy = clat - plat;
+            const len2 = dx * dx + dy * dy;
+            let t = len2 > 0 ? -(ax * dx + ay * dy) / len2 : 0;
+            t = t < 0 ? 0 : t > 1 ? 1 : t;
+            const cx = ax + dx * t, cy = ay + dy * t;
+            const d2 = cx * cx + cy * cy;
+            if (d2 < bestD2) { bestD2 = d2; bE = e; bLng = plng + (clng - plng) * t; bLat = plat + (clat - plat) * t; }
+            plng = clng; plat = clat;
+          }
+        }
+        const ed = edges[bE];
+        const da = (n[ed[0] * 2] - bLng) ** 2 + (n[ed[0] * 2 + 1] - bLat) ** 2;
+        const db = (n[ed[1] * 2] - bLng) ** 2 + (n[ed[1] * 2 + 1] - bLat) ** 2;
+        // Split the snapped edge AT the snap point so routing can start/end exactly
+        // here (partial-edge), not at the nearest node. geomTo0 = snap→endpoint0,
+        // geomTo1 = snap→endpoint1 (both begin at the snap point); len0/len1 are the
+        // partial-edge lengths in metres. Locate the segment the point lies on, then
+        // slice the full edge geometry around it.
+        const sp = [bLng, bLat], geom = this.fullGeom(bE);
+        let ks = 0, segBest = Infinity;
+        for (let k = 0; k < geom.length - 1; k++) {
+          const A = geom[k], B = geom[k + 1];
+          const ax = (sp[0] - A[0]) * mx, ay = sp[1] - A[1];
+          const dx = (B[0] - A[0]) * mx, dy = B[1] - A[1];
+          const l2 = dx * dx + dy * dy;
+          let t = l2 > 0 ? (ax * dx + ay * dy) / l2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const cx = ax - dx * t, cy = ay - dy * t, d2 = cx * cx + cy * cy;
+          if (d2 < segBest) { segBest = d2; ks = k; }
+        }
+        const geomTo1 = [sp, ...geom.slice(ks + 1)];              // snap → endpoint1 (a→b)
+        const geomTo0 = [sp, ...geom.slice(0, ks + 1).reverse()]; // snap → endpoint0 (b→a)
+        const lenOf = (arr) => { let s = 0; for (let i = 1; i < arr.length; i++) s += metersBetween(arr[i - 1], arr[i]); return s; };
+        return { e: bE, lng: bLng, lat: bLat, node: da <= db ? ed[0] : ed[1],
+                 distM: Math.round(Math.sqrt(bestD2) * 111320),
+                 geomTo0, geomTo1, len0: lenOf(geomTo0), len1: lenOf(geomTo1) };
+      },
+
+      // --- A* routing (Task 5) ---
+      // Cost = travel time (len / class speed); service roads ×penalty so they're
+      // used only for access, not through-routes. Heuristic = straight-line time
+      // at the fastest class speed (admissible → shortest-time path).
+      // PARTIAL-EDGE routing: the trip begins/ends exactly at the snapped points
+      // (mid-way), not at the nearest node — otherwise every trip is padded by the
+      // walk to the nearest intersection (and can even set off the wrong way first).
+      // We drive the partial start edge to whichever endpoint the network needs,
+      // A* node→node in the middle, then the partial end edge to the destination.
+      // One-way rules are honoured on the partial edges too. A virtual GOAL node
+      // (-1) lets the heuristic aim at the destination POINT, not a node.
+      route(sA, sB) {
+        const g = this.graph, adj = this.adj, speed = this.speed, edgeSpeed = this.edgeSpeed;
+        // per-vertex altitude for a route polyline. The first/last vertices are the
+        // snap points (interpolated, so absent from the coord→z index → 0); clamp them
+        // to their neighbour so the 3D ribbon doesn't spike up at the start / dip at the
+        // end when the trip begins or ends on an elevated road.
+        const zsFor = (cs) => {
+          const z = cs.map((c) => this.zAtCoord(c[0], c[1]));
+          if (z.length > 1) { z[0] = z[1]; z[z.length - 1] = z[z.length - 2]; }
+          return z;
+        };
+        // per-edge assigned speed (m/s) when available, else per-class free-flow
+        const ETA_FACTOR = 0.85; // realistic urban average as a fraction of the limit
+        let maxSpeed = 0;
+        if (edgeSpeed) { for (const v of edgeSpeed) if (v > maxSpeed) maxSpeed = v; }
+        else { for (const v of speed) if (v > maxSpeed) maxSpeed = v; }
+        const es = (e, cls) => (edgeSpeed ? edgeSpeed[e] : (speed[cls] || maxSpeed));
+        const serviceIdx = g.classes.indexOf("service");
+        const penalty = g.meta.service_penalty || 4;
+        const pB = [sB.lng, sB.lat], GOAL = -1;
+        const edA = g.edges[sA.e], edB = g.edges[sB.e];
+        const clsA = edA[3], clsB = edB[3], owA = edA[4], owB = edB[4];
+        const spdA = es(sA.e, clsA), spdB = es(sB.e, clsB);
+        const a0 = edA[0], a1 = edA[1], b0 = edB[0], b1 = edB[1];
+        const nameOf = (e) => { const ed = g.edges[e]; return ed[5] >= 0 ? g.names[ed[5]] : null; };
+        const mkLeg = (e, ge, len, dir) => { const cls = g.edges[e][3], posted = es(e, cls);
+          return { e, ge, len, cls, name: nameOf(e),
+            spd: posted * ETA_FACTOR, lim: Math.round(posted * 3.6), w: g.wayids[e], dir }; };
+
+        // ---- same-edge: A and B on one edge, drive straight along it if oneway allows
+        if (sA.e === sB.e) {
+          const fwd = sA.len0 <= sB.len0;                 // A before B in the a→b order?
+          const dirOK = fwd ? (owB === 0 || owB === 1) : (owB === 0 || owB === 2);
+          if (dirOK) {
+            const gA = fwd ? sA.geomTo1 : sA.geomTo0, gB = fwd ? sB.geomTo1 : sB.geomTo0;
+            const mid = gA.slice(1, gA.length - (gB.length - 1)); // vertices strictly between A and B
+            const ge = [[sA.lng, sA.lat], ...mid, [sB.lng, sB.lat]];
+            const len = Math.abs(sB.len0 - sA.len0);
+            if (len < 1) return null;
+            const leg = mkLeg(sA.e, ge, len, fwd ? "Fwd" : "Back");
+            return { nodes: 2, coords: ge, zs: zsFor(ge), distM: len, timeS: len / leg.spd,
+                     maneuvers: buildManeuvers([leg]), legWays: [{ w: String(leg.w), dir: leg.dir, len }] };
+          }
+          // wrong way on a one-way single edge → fall through and route around
+        }
+
+        const h = (nid) => {
+          if (nid === GOAL) return 0;
+          const x = g.nodes[nid * 2], y = g.nodes[nid * 2 + 1];
+          const mx = Math.cos(y * Math.PI / 180);
+          const dx = (x - pB[0]) * mx * 111320, dy = (y - pB[1]) * 111320;
+          return Math.hypot(dx, dy) / maxSpeed;
+        };
+        const gScore = new Map();
+        const came = new Map();          // node -> { prev, e }   (real edges)
+        const startPrefix = new Map();   // seed node -> { geom, len, dir }  partial start edge
+        const closed = new Set();
+        const open = new MinHeap();
+        // seed the start-edge endpoint(s) reachable from the snap point (oneway-aware)
+        const seed = (node, geom, len, dir) => {
+          const gs = len / spdA;
+          if (gs < (gScore.get(node) ?? Infinity)) {
+            gScore.set(node, gs); startPrefix.set(node, { geom, len, dir });
+            open.push(node, gs + h(node));
+          }
+        };
+        if (owA === 0 || owA === 1) seed(a1, sA.geomTo1, sA.len1, "Fwd"); // drive A→endpoint1
+        if (owA === 0 || owA === 2) seed(a0, sA.geomTo0, sA.len0, "Back");// drive A→endpoint0
+        // end-edge endpoint(s) that can reach the destination point (oneway-aware)
+        const endAt = new Map();         // node -> { cost, geom, len, dir }
+        if (owB === 0 || owB === 1) endAt.set(b0, { cost: sB.len0 / spdB, geom: sB.geomTo0.slice().reverse(), len: sB.len0, dir: "Fwd" });
+        if (owB === 0 || owB === 2) endAt.set(b1, { cost: sB.len1 / spdB, geom: sB.geomTo1.slice().reverse(), len: sB.len1, dir: "Back" });
+
+        while (open.size()) {
+          const cur = open.pop();
+          if (cur === GOAL) break;
+          if (closed.has(cur)) continue;
+          closed.add(cur);
+          const gc = gScore.get(cur);
+          if (endAt.has(cur)) {                    // virtual edge cur → GOAL (partial end edge)
+            const ng = gc + endAt.get(cur).cost;
+            if (ng < (gScore.get(GOAL) ?? Infinity)) {
+              gScore.set(GOAL, ng); came.set(GOAL, { prev: cur, e: -1 }); open.push(GOAL, ng);
+            }
+          }
+          const nbrs = adj.get(cur);
+          if (!nbrs) continue;
+          for (const nb of nbrs) {
+            if (closed.has(nb.to)) continue;
+            const spd = es(nb.e, nb.cls);
+            let cost = nb.len / spd;
+            if (nb.cls === serviceIdx) cost *= penalty;
+            const ng = gc + cost;
+            if (ng < (gScore.get(nb.to) ?? Infinity)) {
+              gScore.set(nb.to, ng); came.set(nb.to, { prev: cur, e: nb.e });
+              open.push(nb.to, ng + h(nb.to));
+            }
+          }
+        }
+        if (!came.has(GOAL)) return null; // unreachable
+        // reconstruct: exit node → back to the seeded origin node
+        const exitNode = came.get(GOAL).prev;
+        const endInfo = endAt.get(exitNode);
+        const seq = [];
+        for (let n = exitNode; came.has(n); ) { const c = came.get(n); seq.push({ e: c.e, from: c.prev }); n = c.prev; }
+        const originNode = seq.length ? seq[seq.length - 1].from : exitNode;
+        const startInfo = startPrefix.get(originNode);
+        if (!startInfo || !endInfo) return null; // shouldn't happen; fail safe
+        seq.reverse();
+        // legs = [start partial] + [middle real edges] + [end partial], all oriented
+        // along travel direction so stitching, bearings, and the lane guide agree.
+        const legs = [mkLeg(sA.e, startInfo.geom, startInfo.len, startInfo.dir)];
+        for (const s of seq) {
+          const ed = g.edges[s.e], ge = this.fullGeom(s.e);
+          if (s.from === ed[1]) ge.reverse();     // stored a→b, we travel b→a
+          legs.push(mkLeg(s.e, ge, ed[2], s.from === ed[0] ? "Fwd" : "Back"));
+        }
+        legs.push(mkLeg(sB.e, endInfo.geom, endInfo.len, endInfo.dir));
+        // stitch coords + totals. REAL travel time uses each leg's effective speed
+        // (per-edge limit × ETA_FACTOR), no service penalty.
+        const coords = []; let distM = 0, timeS = 0;
+        for (const l of legs) {
+          for (let i = coords.length ? 1 : 0; i < l.ge.length; i++) coords.push(l.ge[i]); // drop shared vertex
+          distM += l.len;
+          timeS += l.len / l.spd;
+        }
+        if (distM < 1) return null;
+        return { nodes: seq.length + 2, coords, zs: zsFor(coords), distM, timeS, maneuvers: buildManeuvers(legs),
+                 legWays: legs.map((l) => ({ w: String(l.w), dir: l.dir, len: l.len })) };
+      },
+
+      // --- pick state (Task 4): click to set start (A) then destination (B) ---
+      pickMode: false,
+      points: [],     // [{ marker, snap }]  index 0 = A, 1 = B
+      clearPoints() { for (const p of this.points) p.marker.remove(); this.points = []; },
+    };
+
+    // Minimal binary min-heap for A* (push item+priority, pop lowest priority).
+    class MinHeap {
+      constructor() { this.h = []; }
+      size() { return this.h.length; }
+      push(item, prio) {
+        const h = this.h; h.push({ item, prio }); let i = h.length - 1;
+        while (i > 0) { const p = (i - 1) >> 1; if (h[p].prio <= h[i].prio) break; [h[p], h[i]] = [h[i], h[p]]; i = p; }
+      }
+      pop() {
+        const h = this.h, top = h[0], last = h.pop();
+        if (h.length) { h[0] = last; let i = 0; const n = h.length;
+          for (;;) { let l = 2 * i + 1, r = l + 1, m = i;
+            if (l < n && h[l].prio < h[m].prio) m = l;
+            if (r < n && h[r].prio < h[m].prio) m = r;
+            if (m === i) break; [h[m], h[i]] = [h[i], h[m]]; i = m; } }
+        return top.item;
+      }
+    }
+    window.NAV = NAV; // expose for console poking during dev
+
+    // ---- route-pick UI (Task 4): 🧭 button toggles click-to-place A/B pins ----
+    const btnRoute = document.getElementById("btn-route");
+    const navHint = document.getElementById("nav-hint");
+    const navSummary = document.getElementById("nav-summary");
+    const navPanel = document.getElementById("nav-panel");
+    const navStepsBtn = document.getElementById("nav-steps-btn");
+
+    // human-friendly distance + duration
+    const fmtDist = (m) => m < 950 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(m < 9500 ? 1 : 0)} km`;
+    const fmtDur = (s) => {
+      if (s < 60) return "< 1 min";
+      const min = Math.round(s / 60);
+      if (min < 60) return `${min} min`;
+      const h = Math.floor(min / 60);
+      return `${h} h ${min % 60} min`;
+    };
+    const HINTS = ["Click the map to set your START", "Click to set your DESTINATION",
+                   "Click again to start over"];
+    const setHint = () => { navHint.textContent = HINTS[Math.min(NAV.points.length, 2)]; };
+
+    const makePin = (label) => {
+      const el = document.createElement("div");
+      el.className = "nav-pin " + (label === "A" ? "a" : "b");
+      el.innerHTML = `<b>${label}</b>`;
+      return el;
+    };
+
+    // Route ribbon: a wide CASING drawn first, then a bright CORE on top, so it
+    // reads as a route rather than a hairline. styleRoute() recolours both for
+    // day (blue on navy outline) vs dark (cyan core with a blurred cyan casing
+    // that fakes a neon glow). Zoom-interpolated widths keep it proportional.
+    const styleRoute = (dark) => {
+      if (!map.getLayer("nav-route-core")) return;
+      // dark = neon yellow-gold (stands out against the cyan buildings); day = blue.
+      // Kept semi-transparent so the lane highlight leads (it's a preview underlay).
+      map.setPaintProperty("nav-route-core", "line-color", dark ? "#ffe14d" : "#2f6bd6");
+      map.setPaintProperty("nav-route-core", "line-blur", dark ? 0.6 : 0);
+      map.setPaintProperty("nav-route-core", "line-opacity", dark ? 0.7 : 0.55);
+      map.setPaintProperty("nav-route-casing", "line-color", dark ? "#ffc21e" : "#0f2145");
+      map.setPaintProperty("nav-route-casing", "line-blur", dark ? 5 : 0.4);
+      map.setPaintProperty("nav-route-casing", "line-opacity", 0.4);
+    };
+    const ensureRouteLayer = () => {
+      if (map.getSource("nav-route")) return;
+      // lane-guide: highlights the real HD driving-lane polygons under the car
+      // during the 3D drive (Task 11). Sits just below buildings, above the lanes.
+      map.addSource("lane-guide", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({
+        id: "lane-guide", type: "fill", source: "lane-guide",
+        paint: { "fill-color": "#25e07d", "fill-opacity": 0.5, "fill-outline-color": "#0c7a3d" },
+      }, map.getLayer("buildings-3d") ? "buildings-3d" : undefined);
+      map.addSource("nav-route", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      const casingW = ["interpolate", ["linear"], ["zoom"], 12, 5, 16, 11, 19, 20];
+      const coreW = ["interpolate", ["linear"], ["zoom"], 12, 2, 16, 6, 19, 12];
+      map.addLayer({
+        id: "nav-route-casing", type: "line", source: "nav-route",
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": "#0f2145", "line-width": casingW, "line-opacity": 0.95, "line-blur": 0.4 },
+      });
+      map.addLayer({
+        id: "nav-route-core", type: "line", source: "nav-route",
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": "#2f6bd6", "line-width": coreW, "line-opacity": 1 },
+      });
+      // yellow overlay for the immediate upcoming-turn stretch (drive mode only),
+      // sits ON TOP of the blue core — like the Hudhud/Google turn highlight
+      map.addSource("nav-turn", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({
+        id: "nav-turn", type: "line", source: "nav-turn",
+        layout: { "line-join": "round", "line-cap": "round" },
+        paint: { "line-color": "#f5c518", "line-width": coreW, "line-opacity": 1 },
+      });
+      styleRoute(darkOn); // match the current theme if route is created while dark
+    };
+    const emptyFC = { type: "FeatureCollection", features: [] };
+    const clearRoute = () => {
+      if (map.getSource("nav-route")) map.getSource("nav-route").setData(emptyFC);
+      if (map.getSource("nav-turn")) map.getSource("nav-turn").setData(emptyFC);
+      for (const id of ["nav-route-core", "nav-route-casing", "nav-turn"]) // restore flat visibility
+        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "visible");
+      // the 3D ribbon is a custom WebGL layer — clearing its meshes doesn't auto-
+      // repaint (unlike a geojson setData), so force one or the last frame lingers.
+      if (typeof driveRouteLayer !== "undefined" && driveRouteLayer.scene) { driveRouteLayer.clear(); map.triggerRepaint(); }
+    };
+
+    // full teardown: pins, route line, summary card, hint back to step 1
+    const resetNav = () => {
+      NAV.clearPoints(); clearRoute();
+      NAV.lastRoute = null; // forget the route, else a later 2D/3D toggle redraws it
+      navSummary.classList.remove("on");
+      navPanel.classList.remove("on"); navStepsBtn.classList.remove("on");
+      setHint();
+    };
+
+    const showSummary = (r) => {
+      navSummary.innerHTML =
+        `🚗 <span class="dist">${fmtDist(r.distM)}</span>` +
+        `<span class="sep">·</span> ~${fmtDur(r.timeS)}` +
+        `<span class="clear" title="Clear route">✕</span>`;
+      navSummary.classList.add("on");
+      navSummary.querySelector(".clear").onclick = resetNav;
+    };
+
+    // --- directions panel (Task 9): turn-by-turn list + summary, toggleable ---
+    const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const TURN_GLYPH = { depart: "●", straight: "↑", continue: "↑", left: "↰", "slight-left": "↖",
+      "sharp-left": "↰", right: "↱", "slight-right": "↗", "sharp-right": "↱", uturn: "↩", arrive: "🏁" };
+    const viaRoad = (mans) => { let b = null, bd = -1; for (const m of mans) if (m.name && m.dist > bd) { bd = m.dist; b = m.name; } return b; };
+    const clockAfter = (sec) => new Date(Date.now() + sec * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+    const togglePanel = (show) => {
+      navPanel.classList.toggle("on", show);
+      navStepsBtn.classList.toggle("on", !show && NAV.points.length >= 2);
+    };
+    navStepsBtn.onclick = () => togglePanel(true);
+
+    const swapAB = () => {
+      if (NAV.points.length < 2) return;
+      NAV.points.reverse();
+      NAV.points.forEach((p, i) => {
+        p.marker.remove();
+        p.marker = new maplibregl.Marker({ element: makePin(i === 0 ? "A" : "B"), anchor: "bottom" })
+          .setLngLat([p.snap.lng, p.snap.lat]).addTo(map);
+      });
+      computeRoute();
+    };
+
+    const renderPanel = (r) => {
+      const aName = NAV.edgeName(NAV.points[0].snap.e) || "Start point";
+      const bName = NAV.edgeName(NAV.points[1].snap.e) || "Destination";
+      const via = viaRoad(r.maneuvers);
+      const steps = r.maneuvers.map((m) => {
+        const arr = m.turn === "arrive";
+        return `<div class="step${arr ? " arrive" : ""}"><div class="ic">${TURN_GLYPH[m.turn] || "↑"}</div>` +
+          `<div class="tx">${escapeHtml(m.instruction)}${m.dist ? `<div class="ds">${fmtDist(m.dist)}</div>` : ""}</div></div>`;
+      }).join("");
+      navPanel.innerHTML =
+        `<div class="np-head"><button class="np-hide" title="Hide directions">‹</button>` +
+          `<div class="np-eta">${fmtDur(r.timeS)}<small>(${fmtDist(r.distM)})</small></div>` +
+          `${via ? `<div class="np-sub">via ${escapeHtml(via)}</div>` : ""}` +
+          `<div class="np-sub">Arrive ~${clockAfter(r.timeS)}</div>` +
+          `<button class="np-go">▶ GO — drive in ${is3d ? "3D" : "2D"}</button></div>` +
+        `<div class="np-od">` +
+          `<div class="row"><span class="dot a"></span><span class="name">${escapeHtml(aName)}</span>` +
+            `<button class="np-swap" title="Swap start / destination">⇅</button></div>` +
+          `<div class="row"><span class="dot b"></span><span class="name">${escapeHtml(bName)}</span></div></div>` +
+        `<div class="np-steps">${steps}</div>`;
+      navPanel.querySelector(".np-hide").onclick = () => togglePanel(false);
+      navPanel.querySelector(".np-swap").onclick = swapAB;
+      navPanel.querySelector(".np-go").onclick = () => startDrive(r);
+      togglePanel(true);
+    };
+
+    // frame the whole route on a flat (2D) map, leaving room for the left panel
+    const fitRoute = (coords) => {
+      let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+      for (const [x, y] of coords) { if (x < minx) minx = x; if (y < miny) miny = y; if (x > maxx) maxx = x; if (y > maxy) maxy = y; }
+      map.fitBounds([[minx, miny], [maxx, maxy]], { padding: { top: 90, bottom: 130, left: 360, right: 60 }, pitch: map.getPitch(), duration: 700, maxZoom: 16 });
+    };
+
+    // ================= 3D DRIVE MODE (Task 10) =================
+    // Follow-cam along the route: car marker + maneuver banner (next turn +
+    // distance + road) + simulated speed (from the current road's effective
+    // speed) + bottom bar (remaining dist/time + arrival clock). Play/pause/exit.
+    const driveUI = document.getElementById("drive-ui");
+    const dBanner = document.getElementById("drive-banner");
+    const dSpeedEl = document.querySelector("#drive-speed .cur b");
+    const dLimitEl = document.querySelector("#drive-speed .limit b");
+    const dBottom = document.getElementById("drive-bottom");
+    // PLAYBACK = time compression (1 = real time). TURN_EASE = camera-bearing glide.
+    // Per-mode camera: 3D sits close behind the car; 2D is a tighter top-down chase.
+    const PLAYBACK = 1.0, TURN_EASE = 2.5;
+    const DRIVE_VIEW = { "3d": { pitch: 62, zoom: 19, look: 22 }, "2d": { pitch: 0, zoom: 17.8, look: 0 } };
+    // Turn slowdown: within TURN_SLOW_M of a real turn, ease the car down to
+    // TURN_SLOW_MIN of road speed so corners don't whip past.
+    const TURN_SLOW_M = 35, TURN_SLOW_MIN = 0.3;
+    // The route rides the OSM centerline (between both directions). Shift the driven
+    // path to the RIGHT of travel so the car sits in its own lane, not on the median
+    // — Vietnam drives on the right. ~a lane and a half off centre reads well.
+    const LANE_OFFSET_M = 2.5;
+
+    const metersBetween = (a, b) => {
+      const R = 6371000, rad = Math.PI / 180;
+      const dLat = (b[1] - a[1]) * rad, dLng = (b[0] - a[0]) * rad;
+      const s = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * rad) * Math.cos(b[1] * rad) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(s));
+    };
+    const moveAlong = ([lng, lat], headingDeg, distM) => {
+      const rad = Math.PI / 180;
+      return [lng + (distM * Math.sin(headingDeg * rad)) / (111320 * Math.cos(lat * rad)),
+              lat + (distM * Math.cos(headingDeg * rad)) / 111320];
+    };
+    // Shift a polyline `distM` to the RIGHT of its travel direction so the driven
+    // path sits in the right-hand lane rather than on the centerline. Uses a MITER
+    // join at each vertex: the offset direction is the bisector of the two adjacent
+    // segment normals and the distance is d/cos(halfBend) — the exact point where the
+    // two offset edges meet. A naive fixed-distance per-vertex offset instead pulls
+    // sharp inside corners short of that meeting point, so the offset edges cross and
+    // the path folds into a hook (visible as a kink in the route/turn band and a jink
+    // in the car at ramps). The miter length is capped so near-hairpins don't spike.
+    const offsetRight = (coords, distM) => {
+      const n = coords.length;
+      if (!distM || n < 2) return coords;
+      const segBr = [];
+      for (let i = 0; i < n - 1; i++) segBr.push(bearingDeg(coords[i], coords[i + 1]));
+      return coords.map((c, i) => {
+        let dir, mag = distM;
+        if (i === 0) dir = segBr[0] + 90;
+        else if (i === n - 1) dir = segBr[n - 2] + 90;
+        else {
+          const b1 = segBr[i - 1], b2 = segBr[i];
+          const delta = ((b2 - b1 + 540) % 360) - 180;   // signed turn, -180..180
+          const cosH = Math.cos(Math.abs(delta) * 0.5 * Math.PI / 180);
+          mag = distM * Math.min(cosH > 0.26 ? 1 / cosH : 3.8, 3.8); // miter length, capped
+          dir = b1 + delta / 2 + 90;                       // bisector normal (to the right)
+        }
+        return moveAlong(c, dir, mag);
+      });
+    };
+    // ---- true-3D car (three.js) ------------------------------------------------
+    // A real volumetric mesh rendered INTO MapLibre's GL context via a custom layer,
+    // so it pitches with the camera, depth-tests against the 3D buildings, scales in
+    // real metres, and is lit by three.js lights. Built procedurally (no external
+    // model file) so it stays self-contained; swap in a glTF later if desired.
+    // Local frame: metres, Y-up, car FORWARD = +Z, wheels on the ground plane (y≈0).
+    const buildCarMesh = () => {
+      const g = new THREE.Group();
+      const paint = new THREE.MeshStandardMaterial({ color: 0xd8261f, metalness: 0.45, roughness: 0.42 });
+      const glass = new THREE.MeshStandardMaterial({ color: 0x151b26, metalness: 0.3, roughness: 0.15 });
+      const trim  = new THREE.MeshStandardMaterial({ color: 0x111318, metalness: 0.5, roughness: 0.6 });
+      const tyre  = new THREE.MeshStandardMaterial({ color: 0x0d0d10, metalness: 0.1, roughness: 0.9 });
+      const lamp  = new THREE.MeshStandardMaterial({ color: 0xfff4c2, emissive: 0xffe89a, emissiveIntensity: 0.9, roughness: 0.3 });
+      const rearL = new THREE.MeshStandardMaterial({ color: 0xd23a3a, emissive: 0x7a1414, emissiveIntensity: 0.7, roughness: 0.4 });
+      const box = (w, h, d, mat, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); return m; };
+
+      const L = 4.2, W = 1.85, wheelR = 0.34;
+      // lower body (chassis) — sits just above the wheels
+      g.add(box(W, 0.55, L, paint, 0, wheelR + 0.30, 0));
+      // slightly narrower sill/skirt so the body reads rounded, not a single brick
+      g.add(box(W - 0.12, 0.30, L - 0.2, paint, 0, wheelR + 0.10, 0));
+      // cabin/greenhouse — shorter, set back a touch, dark glass
+      g.add(box(W - 0.24, 0.5, L * 0.44, glass, 0, wheelR + 0.78, -0.15));
+      // roof cap (body colour) over the glass
+      g.add(box(W - 0.30, 0.10, L * 0.40, paint, 0, wheelR + 1.02, -0.15));
+      // headlights (front = +Z) and tail lights (rear = -Z)
+      g.add(box(0.34, 0.16, 0.06, lamp, +0.55, wheelR + 0.34, L / 2 - 0.02));
+      g.add(box(0.34, 0.16, 0.06, lamp, -0.55, wheelR + 0.34, L / 2 - 0.02));
+      g.add(box(0.34, 0.14, 0.06, rearL, +0.55, wheelR + 0.40, -L / 2 + 0.02));
+      g.add(box(0.34, 0.14, 0.06, rearL, -0.55, wheelR + 0.40, -L / 2 + 0.02));
+      // wheels — cylinders with axle along X (across the car)
+      const wheelGeo = new THREE.CylinderGeometry(wheelR, wheelR, 0.26, 20);
+      for (const [x, z] of [[ (W/2)-0.02, L/2 - 1.1], [ -(W/2)+0.02, L/2 - 1.1], [ (W/2)-0.02, -L/2 + 1.05], [ -(W/2)+0.02, -L/2 + 1.05]]) {
+        const wm = new THREE.Mesh(wheelGeo, tyre);
+        wm.rotation.z = Math.PI / 2; // stand the cylinder up as a wheel (axle → X)
+        wm.position.set(x, wheelR, z);
+        g.add(wm);
+      }
+      // soft fake shadow on the ground (MapLibre extrusions can't cast real ones):
+      // a radial-gradient plane laid flat under the car, so it reads as grounded.
+      const cvs = document.createElement("canvas"); cvs.width = cvs.height = 128;
+      const cx = cvs.getContext("2d");
+      const grd = cx.createRadialGradient(64, 64, 6, 64, 64, 62);
+      grd.addColorStop(0, "rgba(0,0,0,0.42)"); grd.addColorStop(1, "rgba(0,0,0,0)");
+      cx.fillStyle = grd; cx.fillRect(0, 0, 128, 128);
+      const shTex = new THREE.CanvasTexture(cvs);
+      const shadow = new THREE.Mesh(new THREE.PlaneGeometry(L + 1.4, W + 1.6),
+        new THREE.MeshBasicMaterial({ map: shTex, transparent: true, depthWrite: false }));
+      shadow.rotation.x = -Math.PI / 2; // lie flat on the XZ ground plane
+      shadow.position.y = 0.02;
+      g.add(shadow);
+      return g;
+    };
+
+    // ONE shared three.js renderer for ALL custom layers (deck, route ribbon, car).
+    // Separate WebGLRenderer instances on the same MapLibre GL context clobber each
+    // other's state → intermittent/partial rendering (the drive route ribbon was
+    // truncating / vanishing once a third renderer was added). Share a single one.
+    let _navRenderer = null;
+    const navRenderer = (m, gl) => {
+      if (!_navRenderer) {
+        _navRenderer = new THREE.WebGLRenderer({ canvas: m.getCanvas(), context: gl, antialias: true });
+        _navRenderer.autoClear = false;
+      }
+      return _navRenderer;
+    };
+
+    // ---- elevated-road 3D deck (three.js) --------------------------------------
+    // Elevated roads (bridges/flyovers) drawn as a SLOPED ribbon mesh whose top
+    // follows the baked z profile — genuinely smooth on ramps (fill-extrusion can only
+    // make flat slabs that stair-step). Built from data/roads_3d.geojson ([lng,lat,z]
+    // lines), densified for smooth ramps, given a slab thickness (curb walls) and lit
+    // so the top reads bright / sides dark — a real concrete deck, not a flat blob.
+    const ROAD_HALF_W = { motorway: 8, motorway_link: 5, trunk: 7, trunk_link: 5,
+      primary: 6, primary_link: 4, secondary: 5, secondary_link: 4, tertiary: 4.5,
+      unclassified: 4, residential: 3.5, living_street: 3, service: 2.5 };
+    const DECK_THICK_M = 1.2, DECK_WIDTH_SCALE = 0.9, DECK_DENSIFY_M = 6;
+    let roads3dData = { type: "FeatureCollection", features: [] };
+    let deckJuncData = { type: "FeatureCollection", features: [] }; // junction slabs
+    const buildElevatedRoadsMesh = () => {
+      if (typeof THREE === "undefined" || !roads3dData.features.length) return null;
+      const M = maplibregl.MercatorCoordinate;
+      const c0 = map.getCenter();
+      const origin = M.fromLngLat({ lng: c0.lng, lat: c0.lat }, 0);
+      const meterUnit = origin.meterInMercatorCoordinateUnits();
+      const thick = DECK_THICK_M * meterUnit, pos = [];
+      const quad = (a, b, c, d) => {
+        pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+        pos.push(a[0], a[1], a[2], c[0], c[1], c[2], d[0], d[1], d[2]);
+      };
+      for (const f of roads3dData.features) {
+        if (!f.geometry || f.geometry.type !== "LineString") continue;
+        // densify so ramps/curves are smooth (linear interp of lng,lat,z)
+        const raw = f.geometry.coordinates, dense = [raw[0]];
+        for (let i = 1; i < raw.length; i++) {
+          const a = raw[i - 1], b = raw[i];
+          const dm = Math.hypot((b[0] - a[0]) * Math.cos(a[1] * Math.PI / 180), b[1] - a[1]) * 111320;
+          const n = Math.max(1, Math.ceil(dm / DECK_DENSIFY_M));
+          for (let k = 1; k <= n; k++) { const t = k / n; dense.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, (a[2] || 0) + ((b[2] || 0) - (a[2] || 0)) * t]); }
+        }
+        const hwM = (ROAD_HALF_W[(f.properties || {}).highway] || 3.5) * DECK_WIDTH_SCALE * meterUnit;
+        const mc = dense.map((c) => { const m = M.fromLngLat({ lng: c[0], lat: c[1] }, c[2] || 0); return [m.x - origin.x, m.y - origin.y, m.z - origin.z]; });
+        const lt = [], rt = [], lb = [], rb = [];
+        for (let i = 0; i < mc.length; i++) {
+          const a = mc[Math.max(0, i - 1)], b = mc[Math.min(mc.length - 1, i + 1)];
+          let dx = b[0] - a[0], dy = b[1] - a[1]; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+          const px = -dy * hwM, py = dx * hwM, T = mc[i][2], B = mc[i][2] - thick;
+          lt.push([mc[i][0] + px, mc[i][1] + py, T]); rt.push([mc[i][0] - px, mc[i][1] - py, T]);
+          lb.push([mc[i][0] + px, mc[i][1] + py, B]); rb.push([mc[i][0] - px, mc[i][1] - py, B]);
+        }
+        for (let i = 0; i < mc.length - 1; i++) {
+          quad(lt[i], rt[i], rt[i + 1], lt[i + 1]); // top — SLOPES with z (smooth)
+          quad(lt[i], lt[i + 1], lb[i + 1], lb[i]); // left curb wall
+          quad(rt[i + 1], rt[i], rb[i], rb[i + 1]); // right curb wall
+        }
+      }
+      // junction SLABS — cover each interchange as one filled deck surface (the polygon
+      // is a convex hull, so a fan triangulation is valid), extruded down like the decks
+      for (const f of (deckJuncData.features || [])) {
+        if (!f.geometry || f.geometry.type !== "Polygon") continue;
+        let ring = f.geometry.coordinates[0];
+        if (!ring || ring.length < 4) continue;
+        const last = ring[ring.length - 1];
+        if (last[0] === ring[0][0] && last[1] === ring[0][1]) ring = ring.slice(0, -1);
+        if (ring.length < 3) continue;
+        const zA = (f.properties || {}).z || 0;
+        const T = M.fromLngLat({ lng: ring[0][0], lat: ring[0][1] }, zA).z - origin.z, B = T - thick;
+        const top = ring.map((c) => { const m = M.fromLngLat({ lng: c[0], lat: c[1] }, zA); return [m.x - origin.x, m.y - origin.y, T]; });
+        const bot = top.map((p) => [p[0], p[1], B]);
+        for (let i = 1; i < top.length - 1; i++) // top face (fan; hull is convex)
+          pos.push(top[0][0], top[0][1], top[0][2], top[i][0], top[i][1], top[i][2], top[i + 1][0], top[i + 1][1], top[i + 1][2]);
+        for (let i = 0; i < top.length; i++) { const j = (i + 1) % top.length; quad(top[i], top[j], bot[j], bot[i]); } // curb
+      }
+      if (!pos.length) return null;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      geo.computeVertexNormals();
+      const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x8e939c, roughness: 0.95, metalness: 0, side: THREE.DoubleSide }));
+      mesh.userData.origin = origin;
+      return mesh;
+    };
+    const elevRoadLayer = {
+      id: "elevated-roads-3d", type: "custom", renderingMode: "3d",
+      onAdd(m, gl) {
+        this.camera = new THREE.Camera(); this.scene = new THREE.Scene();
+        this.scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+        const dir = new THREE.DirectionalLight(0xffffff, 0.55); dir.position.set(0.4, -0.6, 1);
+        this.scene.add(dir);
+        this.mesh = buildElevatedRoadsMesh(); if (this.mesh) this.scene.add(this.mesh);
+        this.renderer = navRenderer(m, gl);
+      },
+      rebuild() {
+        if (!this.scene) return;
+        if (this.mesh) { this.scene.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh.material.dispose(); }
+        this.mesh = buildElevatedRoadsMesh(); if (this.mesh) this.scene.add(this.mesh);
+        if (window._setDeckTheme) window._setDeckTheme(darkOn); // reapply theme colour
+        map.triggerRepaint();
+      },
+      render(gl, matrix) {
+        if (!this.mesh || map.getZoom() < SWITCH_Z) return; // hide with the HD data at low zoom
+        const mArr = Array.isArray(matrix) ? matrix
+          : (matrix && matrix.defaultProjectionData ? matrix.defaultProjectionData.mainMatrix : matrix && matrix.mainMatrix);
+        if (!mArr) return;
+        const o = this.mesh.userData.origin;
+        this.camera.projectionMatrix = new THREE.Matrix4().fromArray(mArr).multiply(new THREE.Matrix4().makeTranslation(o.x, o.y, o.z));
+        this.renderer.resetState();
+        this.renderer.render(this.scene, this.camera);
+      },
+    };
+    // recolour the deck material with the day/dark theme (called from applyTheme)
+    window._setDeckTheme = (dark) => { if (elevRoadLayer.mesh) elevRoadLayer.mesh.material.color.setHex(dark ? 0x3a4353 : 0x8e939c); };
+    let elevAdded = false;
+    const addElevLayer = () => {
+      if (elevAdded || typeof THREE === "undefined" || !roads3dData.features.length) return;
+      try { map.addLayer(elevRoadLayer); elevAdded = true; } catch (_) {}
+    };
+    fetch("data/roads_3d.geojson").then((r) => r.json())
+      .then((d) => { roads3dData = d; if (map.loaded()) addElevLayer(); }).catch(() => {});
+    fetch("data/deck_junctions.geojson").then((r) => r.json())
+      .then((d) => { deckJuncData = d; if (elevAdded) elevRoadLayer.rebuild(); }).catch(() => {});
+
+    // ---- elevated DECK MARKINGS: edge lines + dashed lane dividers drawn along EVERY
+    // elevated deck (data/deck_markings.geojson from bake-graph.mjs), sampled from the
+    // deck's own z-profile so they ride it exactly — smooth ramps included. This is the
+    // SOLE elevated-road detail. (An earlier osm2streets HD lane/marking overlay was
+    // dropped: its altitude is FLAT per OSM way with no ramp data, so it floated / left
+    // cliffs wherever the deck slopes. The graph deck ramps correctly, so its own
+    // procedural markings are the only ones that stay glued to the road.)
+    let deckMarkData = { type: "FeatureCollection", features: [] };
+    const buildElevDetailMesh = () => {
+      if (typeof THREE === "undefined" || !deckMarkData.features.length) return null;
+      const M = maplibregl.MercatorCoordinate;
+      const c0 = map.getCenter();
+      const origin = M.fromLngLat({ lng: c0.lng, lat: c0.lat }, 0);
+      const mu = origin.meterInMercatorCoordinateUnits();
+      const byColor = new Map(); // hex -> flat triangle-soup position array
+      // a thin flat ribbon along a [lng,lat,z] polyline, hugging the deck (lift clears z-fight)
+      const pushLineRibbon = (arr, line, halfWm, lift) => {
+        const hw = halfWm * mu;
+        const mc = line.map((c) => { const m = M.fromLngLat({ lng: c[0], lat: c[1] }, (c[2] || 0) + lift); return [m.x - origin.x, m.y - origin.y, m.z - origin.z]; });
+        const Ln = [], Rn = [];
+        for (let i = 0; i < mc.length; i++) {
+          const a = mc[Math.max(0, i - 1)], b = mc[Math.min(mc.length - 1, i + 1)];
+          let dx = b[0] - a[0], dy = b[1] - a[1]; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+          const px = -dy * hw, py = dx * hw;
+          Ln.push([mc[i][0] + px, mc[i][1] + py, mc[i][2]]); Rn.push([mc[i][0] - px, mc[i][1] - py, mc[i][2]]);
+        }
+        for (let i = 0; i < mc.length - 1; i++) {
+          const l0 = Ln[i], r0 = Rn[i], l1 = Ln[i + 1], r1 = Rn[i + 1];
+          arr.push(l0[0], l0[1], l0[2], r0[0], r0[1], r0[2], r1[0], r1[1], r1[2]);
+          arr.push(l0[0], l0[1], l0[2], r1[0], r1[1], r1[2], l1[0], l1[1], l1[2]);
+        }
+      };
+      for (const f of deckMarkData.features) {
+        if (!f.geometry || f.geometry.type !== "LineString") continue;
+        // no solid edge/border lines — the deck curb defines the edge, and the two
+        // strokes collided at forks/roundabouts. Only dashed lane dividers are drawn.
+        if ((f.properties || {}).style === "edge") continue;
+        const line = f.geometry.coordinates; if (line.length < 2) continue;
+        let arr = byColor.get(0xdfe3ea); if (!arr) { arr = []; byColor.set(0xdfe3ea, arr); }
+        pushLineRibbon(arr, line, 0.10, 0.08);
+      }
+      const group = new THREE.Group();
+      for (const [col, arr] of byColor) {
+        if (!arr.length) continue;
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
+        group.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide,
+          polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })));
+      }
+      group.userData.origin = origin;
+      return group;
+    };
+    const elevDetailLayer = {
+      id: "elevated-detail-3d", type: "custom", renderingMode: "3d",
+      onAdd(m, gl) {
+        this.camera = new THREE.Camera(); this.scene = new THREE.Scene();
+        this.group = buildElevDetailMesh();
+        if (this.group) this.scene.add(this.group);
+        this.renderer = navRenderer(m, gl);
+      },
+      rebuild() {
+        if (!this.scene) return;
+        if (this.group) { this.scene.remove(this.group); this.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
+        this.group = buildElevDetailMesh(); if (this.group) this.scene.add(this.group);
+        map.triggerRepaint();
+      },
+      render(gl, matrix) {
+        if (!this.group || map.getZoom() < SWITCH_Z) return; // hide with the HD data at low zoom
+        const mArr = Array.isArray(matrix) ? matrix
+          : (matrix && matrix.defaultProjectionData ? matrix.defaultProjectionData.mainMatrix : matrix && matrix.mainMatrix);
+        if (!mArr) return;
+        const o = this.group.userData.origin;
+        this.camera.projectionMatrix = new THREE.Matrix4().fromArray(mArr).multiply(new THREE.Matrix4().makeTranslation(o.x, o.y, o.z));
+        this.renderer.resetState();
+        this.renderer.render(this.scene, this.camera);
+      },
+    };
+    window._setDetailTheme = () => {}; // deck markings are white in both themes
+    let elevDetailAdded = false;
+    const addElevDetailLayer = () => {
+      if (elevDetailAdded || typeof THREE === "undefined" || !deckMarkData.features.length) return;
+      try { map.addLayer(elevDetailLayer); elevDetailAdded = true; } catch (_) {}
+    };
+    fetch("data/deck_markings.geojson").then((r) => r.json())
+      .then((d) => { deckMarkData = d; if (elevDetailAdded) elevDetailLayer.rebuild(); else if (map.loaded()) addElevDetailLayer(); }).catch(() => {});
+
+    // ======================================================================
+    // 3D BUILDINGS (three.js) — real roof shapes + OSM colours (F4Map look).
+    // fill-extrusion can only make flat-topped boxes, so above BLDG_Z we take the
+    // buildings over with a three.js mesh built from the building features in view:
+    // walls extruded base->eave, then a roof SOLID raised eave->top per OSM
+    // roof:shape (gabled/hipped/skillion/pyramidal/dome/…), coloured from
+    // building:colour / roof:colour (or a per-block earth tone). Below BLDG_Z the
+    // native fill-extrusion still paints the whole city cheaply. Buildings stream in
+    // the vector tiles, so querySourceFeatures returns exactly what's in view (free
+    // culling) — we just rebuild on moveend. The roof shape is raised on the
+    // footprint's min-area rectangle (most detailed buildings are rectangular); a
+    // flat cap at the eave hides any footprint/box mismatch.
+    const BLDG_Z = 16;        // three.js buildings take over from fill-extrusion here
+    const BLDG_MAX = 12000;   // safety cap on plain buildings meshed per view
+    let bldgDark = false, bldgVisible = true, bldg3dOn = false;
+    const BLDG_TONES = [0xc7c0ac, 0xb3ac98, 0xc1b9a4, 0xa9a28e, 0xcac3b0, 0xb8b19d];
+    const MAT_TINT = { glass: 0x9fb6c9, mirror: 0x9fb6c9, brick: 0x9c5a44, concrete: 0xb8b5ad,
+      cement_block: 0xb8b5ad, stone: 0xb0a894, wood: 0x9c7b4f, plaster: 0xd9d2c2, marble: 0xe6e2da,
+      metal: 0xb9c0c7, metal_sheet: 0xb9c0c7, copper: 0x59a68a };
+    const ROOF_MAT_TINT = { roof_tiles: 0xa0512f, tile: 0xa0512f, metal: 0x9aa0a6, metal_sheet: 0x9aa0a6,
+      concrete: 0xb0ada4, glass: 0x9fb6c9, copper: 0x59a68a, slate: 0x55606b, thatch: 0xb08a4f };
+    const safeColor = (s) => { if (!s) return null; try { const c = new THREE.Color(s); return c; } catch (_) { return null; } };
+    const toneFor = (id) => new THREE.Color(BLDG_TONES[(((parseInt(id, 10) || 0) % 6) + 6) % 6]);
+    const wallColorOf = (p) => bldgDark ? new THREE.Color(0x00e5ff)
+      : (safeColor(p.colour) || (p.material && MAT_TINT[p.material] && new THREE.Color(MAT_TINT[p.material])) || toneFor(p.osm_way_id));
+    const roofColorOf = (p, wc) => bldgDark ? new THREE.Color(0x0a7d92)
+      : (safeColor(p.roof_colour) || (p.roof_material && ROOF_MAT_TINT[p.roof_material] && new THREE.Color(ROOF_MAT_TINT[p.roof_material]))
+        || ((!p.roof_shape || p.roof_shape === "flat") ? wc.clone() : new THREE.Color(0x8f8377)));
+    const normShape = (s) => { if (!s) return "flat"; s = String(s).toLowerCase();
+      if (s === "pitched") return "gabled"; if (s === "pyramid") return "pyramidal";
+      if (s.indexOf("saltbox") >= 0 || s === "gambrel" || s === "half-hipped") return "gabled";
+      return s; };
+    // smallest-area enclosing rectangle (rotating calipers on the convex hull) — the
+    // roof is raised on this box so gables/hips get a clean ridge regardless of the
+    // footprint's vertex order.
+    const convexHull = (P) => {
+      const pts = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      if (pts.length < 3) return pts;
+      const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+      const lo = []; for (const p of pts) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+      const up = []; for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+      lo.pop(); up.pop(); return lo.concat(up);
+    };
+    const minAreaRect = (P) => {
+      const h = convexHull(P);
+      if (h.length < 3) { // degenerate → axis-aligned bbox
+        let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+        for (const p of P) { a = Math.min(a, p[0]); b = Math.min(b, p[1]); c = Math.max(c, p[0]); d = Math.max(d, p[1]); }
+        return { cx: (a + c) / 2, cy: (b + d) / 2, ux: 1, uy: 0, vx: 0, vy: 1, a: (c - a) / 2 || 1e-9, b: (d - b) / 2 || 1e-9 };
+      }
+      let best = null;
+      for (let i = 0; i < h.length; i++) {
+        const a = h[i], b = h[(i + 1) % h.length];
+        let ex = b[0] - a[0], ey = b[1] - a[1]; const L = Math.hypot(ex, ey) || 1; ex /= L; ey /= L;
+        let mnu = Infinity, mxu = -Infinity, mnv = Infinity, mxv = -Infinity;
+        for (const p of h) { const du = p[0] * ex + p[1] * ey, dv = -p[0] * ey + p[1] * ex;
+          mnu = Math.min(mnu, du); mxu = Math.max(mxu, du); mnv = Math.min(mnv, dv); mxv = Math.max(mxv, dv); }
+        const area = (mxu - mnu) * (mxv - mnv);
+        if (!best || area < best.area) best = { area, ex, ey, mnu, mxu, mnv, mxv };
+      }
+      const { ex, ey, mnu, mxu, mnv, mxv } = best, cu = (mnu + mxu) / 2, cv = (mnv + mxv) / 2;
+      return { cx: cu * ex - cv * ey, cy: cu * ey + cv * ex, ux: ex, uy: ey, vx: -ey, vy: ex,
+        a: Math.max(1e-9, (mxu - mnu) / 2), b: Math.max(1e-9, (mxv - mnv) / 2) };
+    };
+    const swapAxes = (box) => { const t = box.a; box.a = box.b; box.b = t;
+      let s = box.ux; box.ux = box.vx; box.vx = s; s = box.uy; box.uy = box.vy; box.vy = s; };
+    const roofHeightM = (p, box, meterUnit, shape) => {
+      if (!shape || shape === "flat") return 0;
+      if (p.roof_height != null) return +p.roof_height;
+      const halfShortM = Math.min(box.a, box.b) / meterUnit;
+      if (p.roof_angle != null) return Math.tan(Math.min(60, Math.max(1, +p.roof_angle)) * Math.PI / 180) * halfShortM;
+      if (shape === "skillion") return Math.min(0.25 * (+p.height || 6), 4);
+      return Math.min(4, Math.max(1.5, 0.4 * (+p.height || 6)));
+    };
+    const buildBuildingsMesh = () => {
+      if (typeof THREE === "undefined") return null;
+      let feats = [];
+      try { feats = map.querySourceFeatures("hd", { sourceLayer: "buildings" }); } catch (_) { return null; }
+      if (!feats.length) return null;
+      const M = maplibregl.MercatorCoordinate, c0 = map.getCenter();
+      const origin = M.fromLngLat({ lng: c0.lng, lat: c0.lat }, 0), meterUnit = origin.meterInMercatorCoordinateUnits();
+      const toLocal = (lng, lat) => { const m = M.fromLngLat({ lng, lat }, 0); return new THREE.Vector2(m.x - origin.x, m.y - origin.y); };
+      const pos = [], col = [];
+      const pushTriC = (A, B, C, ca, cb, cc) => {
+        pos.push(A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]);
+        col.push(ca.r, ca.g, ca.b, cb.r, cb.g, cb.b, cc.r, cc.g, cc.b);
+      };
+      const pushTri = (A, B, C, c) => pushTriC(A, B, C, c, c, c);
+      const pushQuad = (A, B, C, D, c) => { pushTri(A, B, C, c); pushTri(A, C, D, c); };
+      const addWalls = (ring, zLo, zHi, c) => {
+        const cLo = c.clone().multiplyScalar(0.66); // shade darker toward the ground
+        for (let i = 0; i < ring.length; i++) {
+          const a = ring[i], b = ring[(i + 1) % ring.length];
+          const A = [a.x, a.y, zHi], B = [b.x, b.y, zHi], C = [b.x, b.y, zLo], D = [a.x, a.y, zLo];
+          pushTriC(A, B, C, c, c, cLo); pushTriC(A, C, D, c, cLo, cLo);
+        }
+      };
+      const addCap = (rings, z, c) => {
+        const outer = rings[0], holes = rings.slice(1);
+        let faces; try { faces = THREE.ShapeUtils.triangulateShape(outer, holes); } catch (_) { return; }
+        const all = outer.concat(...holes);
+        for (const f of faces) pushTri([all[f[0]].x, all[f[0]].y, z], [all[f[1]].x, all[f[1]].y, z], [all[f[2]].x, all[f[2]].y, z], c);
+      };
+      const addRoof = (box, zE, zT, shape, c) => {
+        const bp = (su, sv, z) => [box.cx + box.ux * su * box.a + box.vx * sv * box.b, box.cy + box.uy * su * box.a + box.vy * sv * box.b, z];
+        const E00 = bp(-1, -1, zE), E10 = bp(1, -1, zE), E11 = bp(1, 1, zE), E01 = bp(-1, 1, zE);
+        if (shape === "gabled") {
+          const R0 = bp(-1, 0, zT), R1 = bp(1, 0, zT);
+          pushQuad(E00, E10, R1, R0, c); pushQuad(E11, E01, R0, R1, c);
+          pushTri(E00, R0, E01, c); pushTri(E10, E11, R1, c);
+        } else if (shape === "hipped" || shape === "mansard" || shape === "pyramidal") {
+          const hr = shape === "pyramidal" ? 0 : Math.max(0, 1 - box.b / box.a);
+          const R0 = bp(-hr, 0, zT), R1 = bp(hr, 0, zT);
+          pushQuad(E00, E10, R1, R0, c); pushQuad(E11, E01, R0, R1, c);
+          pushTri(E00, R0, E01, c); pushTri(E10, E11, R1, c);
+        } else if (shape === "skillion") {
+          const s = box.hiSign || 1;
+          const L0 = bp(-1, -s, zE), L1 = bp(1, -s, zE), H1 = bp(1, s, zT), H0 = bp(-1, s, zT);
+          pushQuad(L0, L1, H1, H0, c);
+          pushTri(L0, H0, bp(-1, s, zE), c); pushTri(L1, bp(1, s, zE), H1, c);
+        } else if (shape === "dome" || shape === "onion" || shape === "round") {
+          const r = Math.min(box.a, box.b), N = 12, seg = 16, H = zT - zE;
+          const prof = (t) => shape === "onion"
+            ? { rr: r * Math.max(0, Math.cos(t * Math.PI / 2) + 0.35 * Math.sin(t * Math.PI) * (1 - t)), zz: zE + H * Math.pow(Math.sin(t * Math.PI / 2), 0.7) }
+            : { rr: r * Math.cos(t * Math.PI / 2), zz: zE + H * Math.sin(t * Math.PI / 2) };
+          const P = (rad, ang, z) => [box.cx + (Math.cos(ang) * box.ux + Math.sin(ang) * box.vx) * rad, box.cy + (Math.cos(ang) * box.uy + Math.sin(ang) * box.vy) * rad, z];
+          let prev = prof(0);
+          for (let sI = 1; sI <= N; sI++) {
+            const cur = prof(sI / N);
+            for (let aI = 0; aI < seg; aI++) {
+              const a0 = aI / seg * 2 * Math.PI, a1 = (aI + 1) / seg * 2 * Math.PI;
+              pushQuad(P(prev.rr, a0, prev.zz), P(prev.rr, a1, prev.zz), P(cur.rr, a1, cur.zz), P(cur.rr, a0, cur.zz), c);
+            }
+            prev = cur;
+          }
+        }
+      };
+      const addBuilding = (poly, p) => {
+        const rings = poly.map((r) => { const v = r.map((cc) => toLocal(cc[0], cc[1]));
+          if (v.length > 1 && v[0].x === v[v.length - 1].x && v[0].y === v[v.length - 1].y) v.pop(); return v; }).filter((r) => r.length >= 3);
+        if (!rings.length) return;
+        const zBase = (+p.base || 0) * meterUnit, hM = (+p.height || 6);
+        const box = minAreaRect(rings[0].map((v) => [v.x, v.y]));
+        if (box.a < box.b) swapAxes(box); // U = long axis
+        const shape = normShape(p.roof_shape);
+        if (p.roof_orientation === "across" && (shape === "gabled" || shape === "hipped")) swapAxes(box);
+        const roofHm = roofHeightM(p, box, meterUnit, shape);
+        const zTop = hM * meterUnit, zEave = Math.max(zBase, (hM - roofHm) * meterUnit);
+        const wc = wallColorOf(p), rc = roofColorOf(p, wc);
+        box.hiSign = 1;
+        if (shape === "skillion" && p.roof_direction != null) {
+          const rad = (+p.roof_direction) * Math.PI / 180, dv = [Math.sin(rad), -Math.cos(rad)]; // downslope (local north = -y)
+          if (Math.abs(dv[0] * box.ux + dv[1] * box.uy) > Math.abs(dv[0] * box.vx + dv[1] * box.vy)) swapAxes(box);
+          box.hiSign = (dv[0] * box.vx + dv[1] * box.vy) > 0 ? -1 : 1; // high side opposite the downslope
+        }
+        if (!p.roof_only) for (const r of rings) addWalls(r, zBase, zEave, wc);
+        addCap(rings, zEave, rc);
+        if (roofHm > 0.05) addRoof(box, zEave, zTop, shape, rc);
+      };
+      const seen = new Set(); let n = 0;
+      // detailed buildings (roof/colour) first so they always survive the cap
+      feats.sort((a, b) => ((b.properties.roof_shape || b.properties.colour) ? 1 : 0) - ((a.properties.roof_shape || a.properties.colour) ? 1 : 0));
+      for (const f of feats) {
+        const p = f.properties, key = p.osm_type + "/" + p.osm_way_id;
+        if (seen.has(key)) continue; seen.add(key);
+        if (n >= BLDG_MAX && !(p.roof_shape || p.colour)) continue;
+        const g = f.geometry, polys = g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : [];
+        for (const poly of polys) addBuilding(poly, p);
+        n++;
+      }
+      if (!pos.length) return null;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+      geo.computeVertexNormals();
+      const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.05, side: THREE.DoubleSide }));
+      mesh.userData.origin = origin;
+      return mesh;
+    };
+    const bldgLayer = {
+      id: "buildings-3d-mesh", type: "custom", renderingMode: "3d",
+      onAdd(m, gl) {
+        this.camera = new THREE.Camera(); this.scene = new THREE.Scene();
+        this.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+        const d1 = new THREE.DirectionalLight(0xffffff, 0.6); d1.position.set(0.5, -0.7, 1.1); this.scene.add(d1);
+        const d2 = new THREE.DirectionalLight(0xdfe8ff, 0.25); d2.position.set(-0.6, 0.4, 0.5); this.scene.add(d2);
+        this.renderer = navRenderer(m, gl); this.rebuild();
+      },
+      rebuild() {
+        if (!this.scene) return;
+        if (this.mesh) { this.scene.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh.material.dispose(); this.mesh = null; }
+        this.mesh = buildBuildingsMesh(); if (this.mesh) this.scene.add(this.mesh); map.triggerRepaint();
+      },
+      render(gl, matrix) {
+        if (!this.mesh || !bldgVisible || map.getZoom() < BLDG_Z) return;
+        const mArr = Array.isArray(matrix) ? matrix
+          : (matrix && matrix.defaultProjectionData ? matrix.defaultProjectionData.mainMatrix : matrix && matrix.mainMatrix);
+        if (!mArr) return;
+        const o = this.mesh.userData.origin;
+        this.camera.projectionMatrix = new THREE.Matrix4().fromArray(mArr).multiply(new THREE.Matrix4().makeTranslation(o.x, o.y, o.z));
+        this.renderer.resetState(); this.renderer.render(this.scene, this.camera);
+      },
+    };
+    let bldgAdded = false, bldgTimer = null;
+    const addBldgLayer = () => { if (bldgAdded || typeof THREE === "undefined") return; try { map.addLayer(bldgLayer); bldgAdded = true; } catch (_) {} };
+    const scheduleBldgRebuild = () => { if (bldgTimer) clearTimeout(bldgTimer); bldgTimer = setTimeout(() => { bldgTimer = null; if (bldgAdded && bldg3dOn) bldgLayer.rebuild(); }, 140); };
+    // Hand off between fill-extrusion (low zoom, cheap) and the three.js mesh (high
+    // zoom, detailed). The fill-extrusion layer is kept but made invisible above the
+    // handoff (opacity 0) so its features stay queryable for the click popup.
+    const updateBldgMode = () => {
+      const on = map.getZoom() >= BLDG_Z;
+      if (on !== bldg3dOn) {
+        bldg3dOn = on;
+        if (map.getLayer("buildings-3d")) map.setPaintProperty("buildings-3d", "fill-extrusion-opacity", on ? 0 : 1);
+        map.triggerRepaint();
+      }
+      if (on) scheduleBldgRebuild();
+    };
+    // recolour with the theme (rebuild regenerates vertex colours for day/night)
+    window._setBldgTheme = (dark) => { bldgDark = dark; if (bldgAdded && bldg3dOn) scheduleBldgRebuild(); };
+
+    // Custom layer: renders the car group into MapLibre's context each frame,
+    // georeferenced from DRIVE.carPos/carHeading. Added once, then shown/hidden.
+    const carLayer = {
+      id: "drive-car-3d", type: "custom", renderingMode: "3d",
+      onAdd(map, gl) {
+        this.camera = new THREE.Camera();
+        this.scene = new THREE.Scene();
+        this.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+        const key = new THREE.DirectionalLight(0xffffff, 0.85); key.position.set(0.6, 1.4, 0.8);
+        this.scene.add(key);
+        const fill = new THREE.DirectionalLight(0xbcd0ff, 0.35); fill.position.set(-0.7, 0.6, -0.5);
+        this.scene.add(fill);
+        this.car = buildCarMesh(); this.car.visible = false;
+        this.scene.add(this.car);
+        this.renderer = navRenderer(map, gl);
+      },
+      render(gl, matrix) {
+        if (!DRIVE.carPos || !this.car) return;
+        // v4 passes the mercator matrix as an array; v5 may pass a projection object
+        const mArr = Array.isArray(matrix) ? matrix
+          : (matrix && matrix.defaultProjectionData ? matrix.defaultProjectionData.mainMatrix : matrix && matrix.mainMatrix);
+        if (!mArr) return;
+        const c = maplibregl.MercatorCoordinate.fromLngLat({ lng: DRIVE.carPos[0], lat: DRIVE.carPos[1] }, DRIVE.carZ || 0);
+        const s = c.meterInMercatorCoordinateUnits();
+        // yaw the car about its local (Y-up) vertical: heading 0=N, 90=E (see derivation)
+        this.car.rotation.y = Math.PI - DRIVE.carHeading * Math.PI / 180;
+        const l = new THREE.Matrix4()
+          .makeTranslation(c.x, c.y, c.z)
+          .scale(new THREE.Vector3(s, -s, s))
+          .multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)); // Y-up model → map Z-up
+        this.camera.projectionMatrix = new THREE.Matrix4().fromArray(mArr).multiply(l);
+        this.renderer.resetState();
+        // clear the depth buffer first so the car is never occluded by the elevated
+        // deck (it sits at the same z as the deck top on a bridge); the car is the
+        // focus of the follow-cam, so it should always draw on top.
+        this.renderer.clearDepth();
+        this.renderer.render(this.scene, this.camera);
+      },
+    };
+
+    // On the ground the flat MapLibre route line looks best (and hides under opaque
+    // decks where the route is elevated). So we only draw a 3D ribbon for the ELEVATED
+    // stretches of the route — the parts that ride a bridge/ramp deck, where a flat
+    // line would sink out of sight. ELEV_MIN keeps ground roads on the flat line.
+    const ELEV_MIN = 0.25; // metres — the ribbon takes over as soon as the route starts
+                           // to rise, so it climbs the WHOLE ramp from near ground level
+                           // and meets the flat line with no vertical gap (a higher
+                           // threshold left the lower ramp flat and the ribbon jumping
+                           // in ~2 m up). Flat roads sit at z=0 → still the flat line.
+    // Split a [lng,lat,z] polyline into GROUND runs (z<ELEV_MIN) and ELEVATED runs
+    // (z>=ELEV_MIN), sharing the transition vertex so the two meet. The flat MapLibre
+    // line draws the ground runs; the 3D ribbon draws the elevated runs — so on a
+    // bridge the route RISES (ribbon) instead of a flat line sitting on the ground
+    // under the deck, and ground stretches keep the clean flat line (no floating bar).
+    const splitByElevation = (coordsZ) => {
+      const ground = [], elevated = []; let cur = null, curHi = null;
+      for (let i = 0; i < (coordsZ ? coordsZ.length : 0); i++) {
+        const hi = (coordsZ[i][2] || 0) >= ELEV_MIN;
+        if (cur === null || hi !== curHi) {
+          cur = []; curHi = hi;
+          if (i > 0) cur.push(coordsZ[i - 1]); // shared transition vertex
+          (hi ? elevated : ground).push(cur);
+        }
+        cur.push(coordsZ[i]);
+      }
+      return { ground: ground.filter((r) => r.length >= 2), elevated: elevated.filter((r) => r.length >= 2) };
+    };
+    // A flat ribbon along one or more [lng,lat,z] polylines, hugging the deck surface
+    // (`lift` just clears z-fighting). Vertices are relative to a shared origin.
+    const buildRouteRibbon = (runs, halfWm, color, liftM, origin, meterUnit) => {
+      const M = maplibregl.MercatorCoordinate, hw = halfWm * meterUnit, pos = [];
+      for (const coordsZ of runs) {
+        if (!coordsZ || coordsZ.length < 2) continue;
+        const mc = coordsZ.map((c) => {
+          const m = M.fromLngLat({ lng: c[0], lat: c[1] }, (c[2] || 0) + liftM);
+          return [m.x - origin.x, m.y - origin.y, m.z - origin.z];
+        });
+        const left = [], right = [];
+        for (let i = 0; i < mc.length; i++) {
+          const a = mc[Math.max(0, i - 1)], b = mc[Math.min(mc.length - 1, i + 1)];
+          let dx = b[0] - a[0], dy = b[1] - a[1]; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+          const px = -dy * hw, py = dx * hw;
+          left.push([mc[i][0] + px, mc[i][1] + py, mc[i][2]]);
+          right.push([mc[i][0] - px, mc[i][1] - py, mc[i][2]]);
+        }
+        for (let i = 0; i < mc.length - 1; i++) {
+          const l0 = left[i], r0 = right[i], l1 = left[i + 1], r1 = right[i + 1];
+          pos.push(l0[0], l0[1], l0[2], r0[0], r0[1], r0[2], r1[0], r1[1], r1[2]);
+          pos.push(l0[0], l0[1], l0[2], r1[0], r1[1], r1[2], l1[0], l1[1], l1[2]);
+        }
+      }
+      if (!pos.length) return null;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
+    };
+
+    // Custom layer holding the elevated route + turn ribbons. Rebuilt each frame from
+    // the current remaining-route slice (only the elevated runs, only in 3D drive).
+    const driveRouteLayer = {
+      id: "drive-route-3d", type: "custom", renderingMode: "3d",
+      onAdd(m, gl) {
+        this.camera = new THREE.Camera(); this.scene = new THREE.Scene();
+        this.renderer = navRenderer(m, gl);
+        this.meshes = {}; this.origin = null; this.meterUnit = 1;
+      },
+      _set(key, coordsZ, halfWm, color, liftM) {
+        if (this.meshes[key]) { this.scene.remove(this.meshes[key]); this.meshes[key].geometry.dispose(); this.meshes[key] = null; }
+        const mesh = buildRouteRibbon(coordsZ, halfWm, color, liftM, this.origin, this.meterUnit);
+        if (mesh) { this.meshes[key] = mesh; this.scene.add(mesh); }
+      },
+      update(routeRuns, turnRuns) {
+        if (!this.scene) return;
+        const c0 = map.getCenter();
+        this.origin = maplibregl.MercatorCoordinate.fromLngLat({ lng: c0.lng, lat: c0.lat }, 0);
+        this.meterUnit = this.origin.meterInMercatorCoordinateUnits();
+        this._set("route", routeRuns, 1.5, 0x2f6bd6, 0.08);
+        this._set("turn", turnRuns, 1.9, 0xf5c518, 0.16);
+      },
+      clear() { if (!this.scene) return; for (const k in this.meshes) if (this.meshes[k]) { this.scene.remove(this.meshes[k]); this.meshes[k].geometry.dispose(); this.meshes[k] = null; } },
+      render(gl, matrix) {
+        if (!this.scene || !this.origin) return;
+        const mArr = Array.isArray(matrix) ? matrix
+          : (matrix && matrix.defaultProjectionData ? matrix.defaultProjectionData.mainMatrix : matrix && matrix.mainMatrix);
+        if (!mArr) return;
+        const o = this.origin;
+        this.camera.projectionMatrix = new THREE.Matrix4().fromArray(mArr)
+          .multiply(new THREE.Matrix4().makeTranslation(o.x, o.y, o.z));
+        this.renderer.resetState();
+        this.renderer.render(this.scene, this.camera);
+      },
+    };
+    let driveRouteAdded = false;
+    const addDriveRouteLayer = () => {
+      if (driveRouteAdded || typeof THREE === "undefined") return;
+      try { map.addLayer(driveRouteLayer); driveRouteAdded = true; } catch (_) {}
+    };
+
+    // Route renderer for BOTH the planning preview AND drive. In 3D the route is SPLIT
+    // by elevation (splitByElevation): ground runs (z<ELEV_MIN) draw as the flat
+    // MapLibre line — keeping its casing + turn arrows — while elevated runs (bridge/
+    // ramp decks) draw as the sloped three.js ribbon so they ride the deck instead of
+    // sinking under it. They share the transition vertex, so the two meet at the ramp
+    // foot with no visible gap. In 2D the whole route is the flat MapLibre line and the
+    // ribbon is cleared. routeZ / turnZ are [lng,lat,z] polylines (or null). Called with
+    // the full route in preview and the trimmed remaining route each frame in drive.
+    const lineFeat = (cz) => ({ type: "Feature", geometry: { type: "MultiLineString", coordinates: cz.map((c) => [c[0], c[1]]) } });
+    const showNavRoute = (routeZ, turnZ, is3D) => {
+      const use3D = is3D && driveRouteAdded && driveRouteLayer.scene;
+      
+      const routeSplit = use3D ? splitByElevation(routeZ) : { ground: [routeZ].filter(Boolean), elevated: [] };
+      const turnSplit  = use3D ? splitByElevation(turnZ)  : { ground: [turnZ].filter(Boolean), elevated: [] };
+
+      // Ground pieces go to the MapLibre geojson layer
+      const rsrc = map.getSource("nav-route"), tsrc = map.getSource("nav-turn");
+      if (rsrc) rsrc.setData(routeSplit.ground.length ? { type: "Feature", geometry: { type: "MultiLineString", coordinates: routeSplit.ground.map(r => r.map(c => [c[0], c[1]])) } } : emptyFC);
+      if (tsrc) tsrc.setData(turnSplit.ground.length ? { type: "Feature", geometry: { type: "MultiLineString", coordinates: turnSplit.ground.map(r => r.map(c => [c[0], c[1]])) } } : emptyFC);
+
+      // Elevated pieces go to the Three.js ribbon layer
+      if (use3D) {
+        driveRouteLayer.update(routeSplit.elevated, turnSplit.elevated);
+      } else {
+        driveRouteLayer.clear();
+      }
+
+      // Always keep the MapLibre flat line layers visible for the ground segments
+      for (const id of ["nav-route-core", "nav-route-casing", "nav-turn"])
+        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "visible");
+    };
+    // draw NAV.lastRoute as a static preview (planning), in the current main-view mode
+    const showPreviewRoute = () => {
+      // preview exists ONLY with a computed route from BOTH a start and an end point;
+      // never during an active drive (the tick owns the route then)
+      if (!NAV.lastRoute || NAV.points.length < 2 || DRIVE.active) return;
+      const r = NAV.lastRoute;
+      const cz = r.coords.map((c, i) => [c[0], c[1], (r.zs && r.zs[i]) || 0]);
+      showNavRoute(cz, null, is3d);
+    };
+    window._showPreviewRoute = showPreviewRoute; // called from setMode (defined earlier)
+
+    let carLayerAdded = false;
+    const setupCarLayer = (pos, heading) => {
+      DRIVE.carPos = pos; DRIVE.carHeading = heading;
+      if (typeof THREE === "undefined") return; // three.js failed to load → skip the car, drive still works
+      addDriveRouteLayer(); // ensure the route ribbon layer exists (also added at load)
+      if (!carLayerAdded) {
+        // order: decks + route ribbon (added at load) → car on top
+        map.addLayer(carLayer);
+        carLayerAdded = true;
+      }
+      if (carLayer.car) carLayer.car.visible = true;
+    };
+    const hideForDrive = (on) => {
+      for (const id of ["controls", "legend", "readout", "search", "nav-summary"]) {
+        const el = document.getElementById(id); if (el) el.style.display = on ? "none" : "";
+      }
+    };
+
+    const DRIVE = { active: false, raf: 0, paused: false, d: 0, total: 0, timeS: 0, carPos: null, carHeading: 0, carZ: 0, last: 0, lastGuide: 0, mode: "3d", curSpeed: 0 };
+
+    // 2D flat car marker (a DOM arrow) — used instead of the three.js mesh when the
+    // driver flips to 2D nav mode during the trip.
+    let car2d = null;
+    const ensureCar2d = () => {
+      if (!car2d) {
+        const el = document.createElement("div"); el.className = "car2d";
+        // bold blue nav chevron with a white outline + halo — high contrast on both
+        // the light and dark basemaps (the old green-on-dark arrow was hard to see)
+        el.innerHTML =
+          '<svg width="48" height="48" viewBox="0 0 48 48">' +
+          '<circle cx="24" cy="24" r="22" fill="rgba(47,107,214,0.22)"/>' +
+          '<path d="M24 5 L38 41 L24 32 L10 41 Z" fill="#2f6bd6" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"/>' +
+          '</svg>';
+        car2d = new maplibregl.Marker({ element: el, rotationAlignment: "map", anchor: "center" });
+      }
+      return car2d;
+    };
+    // Switch the follow-cam between 3D (mesh) and 2D (flat marker) live, mid-trip.
+    const setDriveMode = (mode) => {
+      DRIVE.mode = mode;
+      const b = document.getElementById("drive-bottom").querySelector(".mode");
+      if (b) b.textContent = mode === "3d" ? "3D" : "2D"; // shows the CURRENT view (tap toggles)
+      if (carLayer.car) carLayer.car.visible = (mode === "3d") && DRIVE.active;
+      if (mode === "2d") { if (DRIVE.carPos) ensureCar2d().setLngLat(DRIVE.carPos).setRotation(DRIVE.carHeading).addTo(map); }
+      else if (car2d) car2d.remove();
+      // the drive tick's showNavRoute() switches the route between flat line (2D) and
+      // 3D ribbon (3D) + toggles layer visibility each frame, so nothing to do here.
+      map.triggerRepaint();
+    };
+
+    // exterior ring of a lane polygon (used to dedupe queried lane features)
+    const ringOf = (g) => g.type === "Polygon" ? g.coordinates[0] : g.type === "MultiPolygon" ? g.coordinates[0][0] : null;
+
+    const clearLaneGuide = () => { const s = map.getSource("lane-guide"); if (s) s.setData({ type: "FeatureCollection", features: [] }); };
+    // `winWays` = [{w, dir}] for the current way + one ahead. A lane is highlighted
+    // iff its osm_way_ids contains one of those ways AND its direction matches our
+    // travel — exact, so no cross-street / oncoming / parallel-road false positives.
+    const updateLaneGuide = (pos, winWays) => {
+      const src = map.getSource("lane-guide");
+      if (!src || !winWays || !winWays.length) return;
+      const p = map.project(pos);
+      // narrow, forward-only box: hugs the car's own driving lane(s) AHEAD (screen
+      // up = travel direction), so it no longer paints the full carriageway, the
+      // oncoming side, or the stretch behind the car.
+      const box = [[p.x - 80, p.y - 260], [p.x + 80, p.y + 20]];
+      let feats = [];
+      try { feats = map.queryRenderedFeatures(box, { layers: ["lanes"] }); } catch (_) {}
+      const seen = new Set(), out = [];
+      for (const f of feats) {
+        const pr = f.properties || {};
+        if (pr.type !== "Driving") continue;
+        const ids = String(pr.osm_way_ids).match(/\d+/g);
+        if (!ids) continue;
+        if (!winWays.some((ww) => ww.dir === pr.direction && ids.includes(ww.w))) continue;
+        const ring = ringOf(f.geometry);
+        const key = ring ? `${ring[0][0].toFixed(5)},${ring[0][1].toFixed(5)}` : String(out.length);
+        if (seen.has(key)) continue; seen.add(key);
+        out.push({ type: "Feature", geometry: f.geometry, properties: {} });
+      }
+      src.setData({ type: "FeatureCollection", features: out });
+    };
+
+    const stopDrive = () => {
+      DRIVE.active = false;
+      if (DRIVE.raf) cancelAnimationFrame(DRIVE.raf);
+      // hide (don't remove) the 3D car layer so its single WebGL renderer is reused
+      DRIVE.carPos = null;
+      if (carLayer.car) carLayer.car.visible = false;
+      if (car2d) car2d.remove();
+      if (carLayerAdded) map.triggerRepaint(); // clear the last car frame
+      clearLaneGuide();
+      if (map.getSource("nav-turn")) map.getSource("nav-turn").setData(emptyFC); // drop the yellow turn overlay
+      if (map.getSource("nav-turn")) map.getSource("nav-turn").setData(emptyFC);
+      driveUI.classList.remove("on");
+      hideForDrive(false);
+      togglePanel(true);
+      // restore the full-route PREVIEW in the current main-view mode (unified renderer
+      // handles flat-vs-ribbon + layer visibility); DRIVE.active already false above
+      showPreviewRoute();
+      if (NAV.lastRoute) { navSummary.classList.add("on"); fitRoute(NAV.lastRoute.coords); }
+    };
+
+    const startDrive = (r) => {
+      if (!r || !r.coords || r.coords.length < 2) return;
+      // drive the lane-offset path (car + camera + drawn route all follow it, so
+      // they stay consistent). Planning view keeps the centerline.
+      const pts = offsetRight(r.coords, LANE_OFFSET_M), cum = [0];
+      for (let i = 1; i < pts.length; i++) cum[i] = cum[i - 1] + metersBetween(pts[i - 1], pts[i]);
+      const total = cum[cum.length - 1] || 1;
+      // per-vertex altitude, aligned to pts (offsetRight preserves vertex count)
+      const zs = (r.zs && r.zs.length === pts.length) ? r.zs : pts.map(() => 0);
+      // altitude sampler (metres) at distance d — linear interp along the profile
+      const zAt = (d) => {
+        let i = 0; while (i < pts.length - 2 && cum[i + 1] < d) i++;
+        const segLen = (cum[i + 1] - cum[i]) || 1;
+        const t = Math.max(0, Math.min(1, (d - cum[i]) / segLen));
+        return zs[i] + (zs[i + 1] - zs[i]) * t;
+      };
+      const mans = r.maneuvers, turnAt = []; let acc = 0;
+      for (let i = 0; i < mans.length; i++) { turnAt[i] = acc; acc += mans[i].dist || 0; }
+      // way-runs: merge consecutive legs sharing (way, dir) into distance ranges,
+      // so the lane highlight can cover the current way + exactly one ahead
+      const runs = []; let racc = 0;
+      for (const lw of (r.legWays || [])) {
+        const last = runs[runs.length - 1];
+        if (last && last.w === lw.w && last.dir === lw.dir) last.end += lw.len;
+        else runs.push({ w: lw.w, dir: lw.dir, start: racc, end: racc + lw.len });
+        racc += lw.len;
+      }
+      let segIdx = 0, manPtr = 1, runPtr = 0;
+      // all three pointers reset when d moves backwards (e.g. the ↺ restart) so the
+      // walk never gets stuck at the end of the route.
+      const curRun = (d) => { if (runPtr && d < runs[runPtr].start) runPtr = 0;
+        while (runPtr < runs.length - 1 && d >= runs[runPtr].end) runPtr++; return runPtr; };
+      // pure position sampler (does NOT move segIdx) — safe to call for arbitrary d
+      const posAt = (d) => {
+        let i = 0; while (i < pts.length - 2 && cum[i + 1] < d) i++;
+        const a = pts[i], b = pts[i + 1], segLen = (cum[i + 1] - cum[i]) || 1;
+        const t = Math.max(0, Math.min(1, (d - cum[i]) / segLen));
+        return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+      };
+      const sampleAt = (d) => {
+        if (d < cum[segIdx]) segIdx = 0;
+        while (segIdx < pts.length - 2 && cum[segIdx + 1] < d) segIdx++;
+        const a = pts[segIdx], b = pts[segIdx + 1], segLen = (cum[segIdx + 1] - cum[segIdx]) || 1;
+        const t = Math.max(0, Math.min(1, (d - cum[segIdx]) / segLen));
+        return { pos: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], heading: bearingDeg(a, b) };
+      };
+      // slice the route polyline between two distances (for the yellow turn stretch)
+      const sliceRoute = (d0, d1) => {
+        if (d1 - d0 < 1) return null;
+        const out = [posAt(d0)];
+        for (let i = 0; i < pts.length; i++) if (cum[i] > d0 && cum[i] < d1) out.push(pts[i]);
+        out.push(posAt(d1));
+        return out.length >= 2 ? out : null;
+      };
+      // same slice, but carrying altitude → [lng,lat,z] for the 3D route ribbon
+      const sliceRouteZ = (d0, d1) => {
+        if (d1 - d0 < 1) return null;
+        const p0 = posAt(d0), p1 = posAt(d1);
+        const out = [[p0[0], p0[1], zAt(d0)]];
+        for (let i = 0; i < pts.length; i++) if (cum[i] > d0 && cum[i] < d1) out.push([pts[i][0], pts[i][1], zs[i]]);
+        out.push([p1[0], p1[1], zAt(d1)]);
+        return out.length >= 2 ? out : null;
+      };
+      const upcoming = (d) => { if (manPtr > 1 && d < turnAt[manPtr - 1]) manPtr = 1;
+        while (manPtr < mans.length - 1 && d >= turnAt[manPtr]) manPtr++; return manPtr; };
+      const updateHud = (mi) => {
+        const man = mans[mi], isFinished = DRIVE.d >= total;
+        dBanner.querySelector(".b-ic").textContent = TURN_GLYPH[man.turn] || "↑";
+        dBanner.querySelector(".b-dist").textContent = fmtDist(Math.max(0, turnAt[mi] - DRIVE.d));
+        dBanner.querySelector(".b-road").textContent = isFinished ? "Arrived at destination" : (man.name || (man.turn === "arrive" ? "Arrive at destination" : ""));
+        // "Then <arrow>" — preview the maneuver after the upcoming one
+        const then = mans[mi + 1], thenEl = dBanner.querySelector(".b-then");
+        if (then && !isFinished) { dBanner.querySelector(".b-then-ic").textContent = TURN_GLYPH[then.turn] || "↑"; thenEl.classList.add("on"); }
+        else thenEl.classList.remove("on");
+        // speed cluster: current (eased) speed + posted limit of the road we're on
+        dSpeedEl.textContent = isFinished ? "0" : Math.round(DRIVE.curSpeed * 3.6);
+        const lim = mans[Math.max(0, mi - 1)].lim;
+        dLimitEl.textContent = lim ? lim : "–";
+
+        const remainT = Math.max(0, DRIVE.timeS * (1 - DRIVE.d / total));
+        dBottom.querySelector(".remain").textContent = fmtDur(remainT);
+        dBottom.querySelector(".dist").textContent = fmtDist(Math.max(0, total - DRIVE.d));
+        dBottom.querySelector(".eta").textContent = isFinished ? "Arrived" : "Arrive ~" + clockAfter(remainT);
+      };
+      const tick = (ts) => {
+        if (!DRIVE.active) return;
+        if (!DRIVE.last) DRIVE.last = ts;
+        let dt = (ts - DRIVE.last) / 1000; DRIVE.last = ts; if (dt > 0.1) dt = 0.1;
+        const mi = upcoming(DRIVE.d);
+        // cruise at the road's posted speed (so the speedometer sits near the limit),
+        // falling back to the effective speed only if no posted value is known
+        const cm = mans[Math.max(0, mi - 1)];
+        const posted = cm.lim ? cm.lim / 3.6 : (cm.spd || 8);
+        // slow into a real turn: scale down as we approach the next turning maneuver
+        const isTurn = /left|right|uturn/.test(mans[mi] ? mans[mi].turn : "");
+        const toTurn = turnAt[mi] - DRIVE.d;
+        const slow = (isTurn && toTurn < TURN_SLOW_M)
+          ? TURN_SLOW_MIN + (1 - TURN_SLOW_MIN) * Math.max(0, toTurn) / TURN_SLOW_M : 1;
+        DRIVE.curSpeed = posted * slow;
+        if (!DRIVE.paused) {
+          DRIVE.d += DRIVE.curSpeed * PLAYBACK * dt;
+          if (DRIVE.d > total) DRIVE.d = total;
+        }
+        const s = sampleAt(DRIVE.d);
+        DRIVE.carPos = s.pos; DRIVE.carHeading = s.heading; DRIVE.carZ = zAt(DRIVE.d); // 3D car reads these in its render()
+        // ease the camera bearing toward the heading so turns glide instead of snapping
+        const diff = ((s.heading - DRIVE.camBearing + 540) % 360) - 180;
+        DRIVE.camBearing = (DRIVE.camBearing + diff * Math.min(1, dt * TURN_EASE) + 360) % 360;
+        const V = DRIVE_VIEW[DRIVE.mode];
+        // The follow-cam targets the GROUND (z=0). On an elevated deck the car is ~carZ
+        // up, which shifts it UP out of frame. Compensate by looking further AHEAD by
+        // the elevation projected onto the ground (carZ / tan(elevation-angle)), so the
+        // lifted car sits at the same screen position as a ground car. (2D/top-down:
+        // no shift, so no compensation.)
+        const elevLook = (V.pitch > 5 && (DRIVE.carZ || 0) > 0.1)
+          ? DRIVE.carZ / Math.tan((90 - V.pitch) * Math.PI / 180) : 0;
+        map.jumpTo({ center: moveAlong(s.pos, DRIVE.camBearing, V.look + elevLook), bearing: DRIVE.camBearing, pitch: V.pitch, zoom: V.zoom });
+        if (DRIVE.mode === "2d" && car2d) car2d.setLngLat(s.pos).setRotation(s.heading);
+        // show only the road AHEAD — trim to the remaining portion so the already-
+        // driven stretch behind the car disappears (like real nav). yellow = a short
+        // band AT the turn (last ~35 m into it), shown once the turn is within range.
+        // trim to the road AHEAD (remaining route) + a short yellow turn band; the
+        // SAME unified renderer as the preview (3D = sloped ribbon on the decks, 2D =
+        // flat line), so preview and drive look identical.
+        const TURN_BAND_M = 35;
+        const nearTurn = mans[mi] && /left|right|uturn/.test(mans[mi].turn) && (turnAt[mi] - DRIVE.d) < 160;
+        const turnD0 = Math.max(DRIVE.d, turnAt[mi] - TURN_BAND_M);
+        showNavRoute(sliceRouteZ(DRIVE.d, total), nearTurn ? sliceRouteZ(turnD0, turnAt[mi]) : null, DRIVE.mode === "3d");
+        if (ts - DRIVE.lastGuide > 180) { // throttle lane highlight; window = current way + one ahead
+          DRIVE.lastGuide = ts;
+          const rp = curRun(DRIVE.d);
+          // only pre-light the NEXT way when we're close to it — otherwise a
+          // diverging side road lights up green hundreds of metres early
+          const nearNext = runs[rp] && (runs[rp].end - DRIVE.d) < 70;
+          const winWays = [runs[rp], nearNext ? runs[rp + 1] : null].filter(Boolean).map((r) => ({ w: r.w, dir: r.dir }));
+          updateLaneGuide(s.pos, winWays);
+        }
+        updateHud(mi);
+        if (DRIVE.d >= total && !DRIVE.paused) { 
+          DRIVE.paused = true; 
+          dBottom.querySelector(".pause").textContent = "↺"; 
+        }
+        DRIVE.raf = requestAnimationFrame(tick);
+      };
+
+      const s0 = sampleAt(0);
+      Object.assign(DRIVE, { active: true, paused: false, d: 0, total, timeS: r.timeS, last: 0, camBearing: s0.heading });
+      hideForDrive(true);
+      togglePanel(false); navStepsBtn.classList.remove("on"); navHint.classList.remove("on");
+      driveUI.classList.add("on");
+      dBottom.querySelector(".pause").textContent = "⏸";
+      setupCarLayer(s0.pos, s0.heading);
+      setDriveMode(is3d ? "3d" : "2d"); // launch in whatever mode the map is currently showing
+      dBottom.querySelector(".theme").textContent = darkOn ? "☀️" : "🌙";
+      const V0 = DRIVE_VIEW[DRIVE.mode];
+      map.jumpTo({ center: moveAlong(s0.pos, s0.heading, V0.look), bearing: s0.heading, pitch: V0.pitch, zoom: V0.zoom });
+      DRIVE.raf = requestAnimationFrame(tick);
+    };
+
+    dBottom.querySelector(".pause").onclick = () => {
+      if (!DRIVE.active) return;
+      DRIVE.last = 0;
+      if (DRIVE.d >= DRIVE.total) {           // arrived → this button is "↺ restart"
+        DRIVE.d = 0; DRIVE.paused = false;
+        dBottom.querySelector(".pause").textContent = "⏸";
+        return;
+      }
+      DRIVE.paused = !DRIVE.paused;
+      dBottom.querySelector(".pause").textContent = DRIVE.paused ? "▶" : "⏸";
+    };
+    dBottom.querySelector(".exit").onclick = stopDrive;
+    // switch 2D / 3D live during the trip
+    dBottom.querySelector(".mode").onclick = () => setDriveMode(DRIVE.mode === "3d" ? "2d" : "3d");
+    // switch day / night live during the trip (drives the same global theme)
+    dBottom.querySelector(".theme").onclick = () => {
+      btnDark.onclick();
+      dBottom.querySelector(".theme").textContent = darkOn ? "☀️" : "🌙";
+    };
+
+    const computeRoute = () => {
+      const [a, b] = NAV.points;
+      const t0 = performance.now();
+      const r = NAV.route(a.snap, b.snap);
+      const ms = (performance.now() - t0).toFixed(1);
+      if (!r) { navHint.textContent = "⚠ No route found between those points"; navSummary.classList.remove("on"); togglePanel(false); console.warn("[nav] no route"); return; }
+      // route() already begins/ends exactly at the snapped points (partial edges)
+      const coords = r.coords;
+      ensureRouteLayer();
+      NAV.lastRoute = r;
+      showPreviewRoute(); // 3D = sloped ribbon on the decks, 2D = flat line (same as drive)
+      showSummary(r);
+      renderPanel(r);
+      fitRoute(coords);
+      navHint.textContent = "Click again to start over";
+      console.log(`[nav] route: ${r.nodes} nodes, ${fmtDist(r.distM)}, ${fmtDur(r.timeS)}, A* in ${ms}ms`);
+      console.log(`[nav] ${r.maneuvers.length} maneuvers:`);
+      r.maneuvers.forEach((m, i) => console.log(`   ${i + 1}. ${m.instruction}${m.dist ? " — " + fmtDist(m.dist) : ""}`));
+    };
+
+    const SNAP_MAX_M = 150; // farther than this from any road = off the mapped network
+    const placePoint = (lngLat) => {
+      if (NAV.points.length >= 2) { resetNav(); return; } // guard: already have A+B
+      const s = NAV.snap(lngLat.lng, lngLat.lat);
+      if (s.distM > SNAP_MAX_M) {
+        navHint.textContent = "⚠ No road near there — pick a point on the mapped area";
+        return;
+      }
+      const label = NAV.points.length === 0 ? "A" : "B";
+      const marker = new maplibregl.Marker({ element: makePin(label), anchor: "bottom" })
+        .setLngLat([s.lng, s.lat]).addTo(map);
+      NAV.points.push({ marker, snap: s });
+      console.log(`[nav] ${label} snapped ${s.distM}m to edge #${s.e}, node #${s.node}`);
+      if (NAV.points.length === 2) computeRoute(); else setHint();
+    };
+
+    let lastPick = 0;
+    map.on("click", (e) => {
+      if (!NAV.pickMode || !NAV.graph) return;
+      const now = performance.now();
+      if (now - lastPick < 350) return; // swallow the paired click of a dbl-click
+      lastPick = now;
+      if (NAV.points.length >= 2) { resetNav(); return; } // 3rd click resets
+      placePoint(e.lngLat);
+    });
+
+    btnRoute.onclick = () => {
+      NAV.pickMode = !NAV.pickMode;
+      btnRoute.classList.toggle("on", NAV.pickMode);
+      navHint.classList.toggle("on", NAV.pickMode);
+      map.getCanvas().style.cursor = NAV.pickMode ? "crosshair" : "";
+      if (NAV.pickMode) { NAV.ensureGraph().catch(() => {}); setHint(); }
+      else { resetNav(); }
+    };
+
+    // one-time verification (Task 3) — load after the map goes idle so it can't
+    // slow the first paint, then log a self-check. Remove once the UI drives loads.
+    map.once("idle", () => {
+      const t0 = performance.now();
+      NAV.ensureGraph().then((g) => {
+        const ms = (performance.now() - t0).toFixed(0);
+        const dirEdges = [...NAV.adj.values()].reduce((s, a) => s + a.length, 0);
+        // pick a node with the most neighbours as a sample lookup
+        let sample = null, best = -1;
+        for (const [n, a] of NAV.adj) if (a.length > best) { best = a.length; sample = n; }
+        console.log(`[nav] graph loaded in ${ms}ms`);
+        console.log(`[nav]   nodes=${g.meta.nodes} (adj has ${NAV.adj.size} with out-edges)`);
+        console.log(`[nav]   edges=${g.meta.edges} -> ${dirEdges} directed adjacency entries`);
+        console.log(`[nav]   classes=${g.classes.length}, names=${g.names.length}`);
+        const [lng, lat] = NAV.nodeLngLat(sample);
+        console.log(`[nav]   busiest node #${sample} @ ${lat.toFixed(5)},${lng.toFixed(5)} has ${best} neighbours:`,
+          NAV.adj.get(sample).map((x) => `${g.classes[x.cls]}(${x.len}m)`));
+      }).catch(() => {});
+    });
+  </script>
+</body>
+</html>
