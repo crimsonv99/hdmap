@@ -1,0 +1,6 @@
+Tells GitHub Pages to publish this tree verbatim instead of running Jekyll over it.
+
+Without this file Pages builds the site with Jekyll, which (a) skips files and
+directories whose names begin with _ or ., and (b) walks all 3,410 files under
+tiles/ on every deploy for no reason. The viewer is already a finished static
+site — there is nothing to build.

@@ -334,7 +334,17 @@
     // view are fetched — this is how the whole city renders smoothly (the F4Map
     // approach). No PMTiles browser plugin: plain gzipped MVT over HTTP, the most
     // reliable MapLibre path. Each osm2streets layer is a source-layer in the tiles.
-    const TILE_URL = location.origin + location.pathname.replace(/[^/]*$/, "") + "api/tiles/{z}/{x}/{y}.pbf?key=DEMO_KEY_123";
+    // Tiles are read as STATIC files, not through api.mjs's /api/tiles route, because
+    // this page has to run on a plain static host (GitHub Pages) where no /api/ exists
+    // — the API path made every tile 404 there. Static works in all three modes:
+    // Pages, serve.mjs, and api.mjs (which mounts express.static(__dirname), and whose
+    // auth middleware only guards /api/, so no key is needed). /api/tiles served
+    // exactly these files anyway, so nothing is lost — and the DEMO key stops being
+    // baked into the published page.
+    //
+    // Page-relative, NOT root-relative: under https://<user>.github.io/<repo>/ the
+    // site lives at a path prefix, so a leading "/" would escape it.
+    const TILE_URL = location.origin + location.pathname.replace(/[^/]*$/, "") + "tiles/{z}/{x}/{y}.pbf";
     const META = "data/hanoi-meta.json";
     // vector source id -> source-layer name inside the tiles
     const SRC_LAYER = {
@@ -1122,7 +1132,9 @@
       ensureGraph() {
         if (this.graph) return Promise.resolve(this.graph);
         if (this.loading) return this.loading;
-        this.loading = fetch("api/graph?key=DEMO_KEY_123")
+        // static file, not /api/graph — /api/ doesn't exist on a static host, which
+        // silently broke routing there. This is the very file /api/graph sent.
+        this.loading = fetch("data/graph.json")
           .then((r) => { if (!r.ok) throw new Error(`graph.json ${r.status}`); return r.json(); })
           .then((g) => { this.build(g); return this.graph; })
           .catch((err) => { this.loading = null; console.warn("[nav] graph load failed:", err); throw err; });
