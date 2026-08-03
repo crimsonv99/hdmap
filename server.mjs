@@ -234,6 +234,10 @@ function polyString(coords) {
 // /api/alldata so the tag list stays in one place.
 const ctxArea = (area) =>
   `way["building"]${area};relation["building"]${area};` +
+  // Simple 3D Buildings: standalone building:part=* ways carry no building=* tag and
+  // aren't grouped in a relation, so ["building"] misses them. Pull them explicitly
+  // so build.mjs can suppress the outline and render the parts (S3DB §0).
+  `way["building:part"]${area};relation["building:part"]${area};` +
   `way["natural"="water"]${area};relation["natural"="water"]${area};` +
   `way["water"]${area};way["waterway"="riverbank"]${area};` +
   `way["landuse"~"reservoir|basin|grass|forest|meadow|village_green|cemetery|recreation_ground|orchard|farmland"]${area};` +

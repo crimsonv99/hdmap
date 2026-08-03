@@ -79,6 +79,18 @@ const NO_LANE_LINE_CLASSES = new Set(["service", "track"]);
 // is present we do NOT inject a default `lanes`, so surveyed data always wins.
 const LANE_TAGS = ["lanes", "oneway", "lanes:forward", "lanes:backward"];
 
+// highway classes that are NOT drivable roads — rendering them as HD lanes is
+// misleading (a footpath is not a carriageway), so they're dropped before
+// osm2streets runs. All-data mode still shows them as raw lines. (Ported from the
+// platform hdmap so this tool's road network matches: drivable roads only.)
+const NON_ROUTABLE_HIGHWAY = new Set([
+  "construction", "proposed", "planned", "abandoned", "disused", "razed",
+  "demolished", "removed", "no", "footway", "pedestrian", "path", "cycleway",
+  "bridleway", "steps", "corridor", "platform", "raceway", "bus_guideway",
+  "escape", "elevator",
+]);
+const isRoutableHighway = (hw) => hw != null && !NON_ROUTABLE_HIGHWAY.has(hw);
+
 /**
  * Return { xml, wayHighway }:
  *  - xml: the OSM XML with a default `lanes=<n>` injected onto highway ways that
@@ -94,6 +106,7 @@ function prepareRoads(osmXml) {
     const ways = doc.getElementsByTagName("way");
     const wayHighway = {};
     let injected = 0;
+    const toRemove = []; // non-routable highway ways to drop (footways/paths/etc.)
     for (let i = 0; i < ways.length; i++) {
       const way = ways[i];
       const tagEls = way.getElementsByTagName("tag");
@@ -102,6 +115,9 @@ function prepareRoads(osmXml) {
         tags[tagEls[j].getAttribute("k")] = tagEls[j].getAttribute("v");
       const hw = tags.highway;
       if (!hw) continue;
+      // drop classes that aren't drivable roads so they don't render as HD lanes
+      // (removed after the loop to keep the live-collection index stable).
+      if (!isRoutableHighway(hw)) { toRemove.push(way); continue; }
       wayHighway[way.getAttribute("id")] = hw;
       const want = LANES_BY_CLASS[hw];
       if (want == null) continue;                       // class not widened
@@ -112,8 +128,9 @@ function prepareRoads(osmXml) {
       way.appendChild(el);
       injected++;
     }
+    for (const w of toRemove) { if (w.parentNode) w.parentNode.removeChild(w); }
     const xml = new XMLSerializer().serializeToString(doc);
-    return { xml, wayHighway, injected };
+    return { xml, wayHighway, injected, dropped: toRemove.length };
   } catch (e) {
     return { xml: osmXml, wayHighway: {}, injected: 0, error: String(e) };
   }
@@ -196,6 +213,21 @@ const parseMeters = (s) => {
   return m ? parseFloat(m[0]) : null;
 };
 
+// roof:direction / roof:orientation aiming. Accepts a number ("135", "135.5") or a
+// 16-point compass name (N, NNE, NE, … ) and returns degrees clockwise from north,
+// which is how a 3D renderer aims a skillion slope or a gabled ridge.
+const COMPASS = {
+  N: 0, NNE: 22.5, NE: 45, ENE: 67.5, E: 90, ESE: 112.5, SE: 135, SSE: 157.5,
+  S: 180, SSW: 202.5, SW: 225, WSW: 247.5, W: 270, WNW: 292.5, NW: 315, NNW: 337.5,
+};
+const parseDirection = (s) => {
+  if (s == null) return null;
+  const key = String(s).trim().toUpperCase();
+  if (key in COMPASS) return COMPASS[key];
+  const n = parseFloat(key);
+  return Number.isFinite(n) ? ((n % 360) + 360) % 360 : null;
+};
+
 // A multipolygon boundary may be SPLIT across several member ways, in any order and
 // any direction. Chain them end-to-end (by shared node id) into closed rings.
 function assembleRings(memberWayIds, ways, nodes) {
@@ -239,6 +271,15 @@ function pointInRing([x, y], ring) {
   return inside;
 }
 
+// shoelace area of a ring (in raw lon/lat deg² — only ever used as a RATIO between
+// two rings in the same place, so the unit cancels).
+function ringArea(ring) {
+  let a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++)
+    a += (ring[j][0] + ring[i][0]) * (ring[j][1] - ring[i][1]);
+  return Math.abs(a / 2);
+}
+
 // shared height/base inference + property bag for both ways and relations
 function buildingProps(tags, id, osmType) {
   const lvl = parseMeters(tags["building:levels"]);
@@ -248,6 +289,15 @@ function buildingProps(tags, id, osmType) {
   // this tool's estimates, and mass-uploading estimates back into OSM as if surveyed
   // is exactly what the automated-edits code of conduct warns against.
   const height_source = tagH != null ? "tag" : lvl != null ? "levels" : "default";
+  // ---- detailed-3D (Simple 3D Buildings) tags — see detailed-building-tagging.md.
+  // Emitted so the viewer's three.js building layer can raise real roof shapes,
+  // colours and materials instead of a flat hash-tinted box. All optional: a plain
+  // footprint leaves these null and still renders as a flat extrusion.
+  const roofShape = tags["roof:shape"] || null;
+  const roofHeight = parseMeters(tags["roof:height"]);
+  const roofAngle = parseMeters(tags["roof:angle"]);
+  // wall=no / building=roof → roof only (canopies, stadium roofs, bandstands)
+  const roofOnly = tags.wall === "no" || (tags.building ?? tags["building:part"]) === "roof";
   return {
     osm_way_id: id,     // kept as the generic element id (see osm_type)
     osm_type: osmType,  // "way" | "relation" — the osm.org link + JOSM push need this
@@ -257,7 +307,24 @@ function buildingProps(tags, id, osmType) {
     name: tags.name ?? null,
     levels: tags["building:levels"] ?? null,
     min_level: tags["building:min_level"] ?? null,
-    building: tags.building ?? tags["building:part"] ?? null,
+    // building=* and building:part=* are DISTINCT OSM keys (a part is a 3D sub-volume
+    // of a building, not a building) — keep them separate so the editor never rewrites
+    // a part as a whole building. `building` holds building=* only; `building_part`
+    // holds building:part=*. A feature may carry one or the other (rarely both).
+    building: tags.building ?? null,
+    building_part: tags["building:part"] ?? null,
+    // roof form
+    roof_shape: roofShape,                                  // flat|gabled|hipped|pyramidal|dome|onion|skillion|…
+    roof_height: roofHeight,                                // m (roof volume alone); null → renderer derives from angle/default
+    roof_angle: roofAngle,                                  // deg pitch, alternative to roof_height
+    roof_orientation: tags["roof:orientation"] || null,     // along|across (ridge vs longest side)
+    roof_direction: parseDirection(tags["roof:direction"]), // deg CW from N, for skillion slope / gable aim
+    // appearance
+    colour: tags["building:colour"] ?? tags.colour ?? null, // façade colour (CSS name or #hex)
+    material: tags["building:material"] ?? tags["building:facade:material"] ?? null,
+    roof_colour: tags["roof:colour"] ?? null,
+    roof_material: tags["roof:material"] ?? null,
+    roof_only: roofOnly || null,                            // suppress walls when set
   };
 }
 
@@ -337,6 +404,39 @@ export function buildingsFromOsm(osmXml) {
   }
 
   // ---- 2. plain closed WAYS tagged building=* / building:part=* -------------
+  // Simple 3D Buildings rule (detailed-building-tagging.md §0): when building:part
+  // sub-volumes TILE a building, the outline is metadata only — the renderer draws
+  // the PARTS, not the outline (emitting both double-renders the outline's flat box
+  // under the detailed parts). BUT most OSM buildings are only PARTIALLY parted (a
+  // station with one tower part, a landmark with a stray neighbour part inside), and
+  // dropping those outlines makes real named buildings vanish. So we suppress an
+  // outline only when the parts whose centroid lands inside it COVER most of its
+  // footprint (≥ COVER_FRAC). Each part stores its centroid + area up front.
+  const COVER_FRAC = 0.7; // parts must tile ≥70% of the outline to replace it
+  const partVols = [];
+  for (const [, w] of ways) {
+    const bp = w.tags["building:part"];
+    if (!bp || bp === "no") continue;
+    const r = [];
+    for (const ref of w.refs) { const p = nodes.get(ref); if (p) r.push(p); }
+    if (r.length < 3) continue;
+    let x = 0, y = 0; for (const p of r) { x += p[0]; y += p[1]; }
+    partVols.push({ c: [x / r.length, y / r.length], a: ringArea(r) });
+  }
+  // true when contained building:part sub-volumes tile most of this outline
+  const partsTileOutline = (ring) => {
+    if (!partVols.length) return false;
+    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+    for (const p of ring) { if (p[0] < minx) minx = p[0]; if (p[0] > maxx) maxx = p[0]; if (p[1] < miny) miny = p[1]; if (p[1] > maxy) maxy = p[1]; }
+    const outlineArea = ringArea(ring);
+    if (outlineArea <= 0) return false;
+    let covered = 0;
+    for (const q of partVols) {
+      if (q.c[0] < minx || q.c[0] > maxx || q.c[1] < miny || q.c[1] > maxy) continue; // bbox reject
+      if (pointInRing(q.c, ring)) covered += q.a;
+    }
+    return covered >= COVER_FRAC * outlineArea;
+  };
   for (const [id, w] of ways) {
     if (consumed.has(id)) continue;
     if (!isBuildingTags(w.tags)) continue;
@@ -346,6 +446,11 @@ export function buildingsFromOsm(osmXml) {
     const first = ring[0], last = ring[ring.length - 1];
     if (first[0] !== last[0] || first[1] !== last[1]) ring.push([first[0], first[1]]); // close it
     if (ring.length < 4) continue;
+    // an outline (building=*, not itself a part) is skipped ONLY when its parts tile
+    // most of it — then the building:part sub-volumes render instead (S3DB §0). A
+    // partially-parted building keeps its outline so it doesn't vanish. Parts always render.
+    const isPart = w.tags["building:part"] && w.tags["building:part"] !== "no";
+    if (!isPart && partsTileOutline(ring)) continue;
     features.push({
       type: "Feature",
       geometry: { type: "Polygon", coordinates: [ring] },

@@ -803,6 +803,8 @@
     <div class="tabpane" data-pane="building" hidden>
       <label><input type="checkbox" id="t-bldg" checked /><span class="sw" style="background:#bcb6a6"></span>
         Buildings (3D)</label>
+      <label title="three.js mesh with real roof shapes + OSM colours — heavier to render, off by default"><input type="checkbox" id="t-bldg3d" /><span class="sw" style="background:#8f8377"></span> Detailed
+        roofs (heavy)</label>
       <label><input type="checkbox" id="t-3d" /><span class="sw" style="background:#6a8caf"></span> 3D view
         (tilt)</label>
       <div class="tools">
@@ -973,6 +975,9 @@
   </div>
 
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+  <!-- three.js (UMD global THREE) — powers the detailed 3D building mesh (real roof
+       shapes + OSM colours) that takes over from fill-extrusion at high zoom. -->
+  <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
   <script>
     async function main() {
       const meta = await fetch("data/meta.json").then((r) => r.json());
@@ -1141,17 +1146,28 @@
       // the junction. Drawing every casing first, then every asphalt fill, lets
       // the fills swallow all internal seams (road↔road and road↔intersection),
       // leaving only the true OUTER perimeter dark — one continuous surface.
+      // Dark casing on BOTH sides of the road, UNDER the fills. Roads are flat, so the
+      // casing carries the elevation cue: the higher a road's `layer`, the BOLDER
+      // (thicker) its side casing, so a bridge/flyover reads as sitting on top of what
+      // it crosses. Untagged data has no layer → coalesced to 0 (thin).
+      const EDGE_WIDTH = ["interpolate", ["linear"], ["coalesce", ["get", "layer"], 0],
+        0, 1.6, 1, 4.5, 2, 7, 3, 9.5, 4, 12];
       const bandEdges = (sfx, flt) => [
-        // Dark casing UNDER the fills. Wider for elevated roads (layer>=1) so a
-        // bridge lifts off what's beneath (this folds in the old `edge-hi`).
         {
-          id: "lanes-edge" + sfx, type: "line", source: "lanes", filter: flt,
+          // solid casing for AT-GRADE / ELEVATED roads (layer >= 0)
+          id: "lanes-edge" + sfx, type: "line", source: "lanes",
+          filter: ["all", flt, [">=", ["coalesce", ["get", "layer"], 0], 0]],
           layout: { "line-sort-key": sortKey, "line-join": "round", "line-cap": "round" },
-          paint: {
-            "line-color": "#1a1e25",
-            "line-width": ["interpolate", ["linear"], ["coalesce", ["get", "layer"], 0],
-              0, 1.4, 1, 2.6, 4, 4.2]
-          }
+          paint: { "line-color": "#1a1e25", "line-width": EDGE_WIDTH }
+        },
+        {
+          // DASHED casing for BELOW-GROUND roads (layer < 0: tunnels / underpasses) —
+          // the standard "it's under here" cue. (line-dasharray can't be feature-driven,
+          // so tunnels get their own casing layer.)
+          id: "lanes-edge-tun" + sfx, type: "line", source: "lanes",
+          filter: ["all", flt, ["<", ["coalesce", ["get", "layer"], 0], 0]],
+          layout: { "line-sort-key": sortKey, "line-join": "round", "line-cap": "butt" },
+          paint: { "line-color": "#1a1e25", "line-width": EDGE_WIDTH, "line-dasharray": [2, 2] }
         },
       ];
       const bandFills = (sfx, flt) => [
@@ -1277,7 +1293,7 @@
           layout: { "line-sort-key": sortKey, "line-join": "round" },
           paint: { "line-color": "#1a1e25", "line-width": 1.4, "line-opacity": 0.9 }
         },
-        ...bandEdges("", ["<", LYR, 1]),     // ground / tunnel road casing
+        ...bandEdges("", ["<", LYR, 1]),     // GROUND band casing (surface + tunnels)
         // --- FILLS (drawn after all casings, so fills cover internal seams) ---
         // Junction asphalt is the SAME grey as the Driving lanes (#5b6270), so
         // roads and junctions fuse into one continuous paved surface (like a
@@ -1290,7 +1306,6 @@
           // (a road split for a tag change) ARE filled: their little polygon sits
           // between the two road halves, so hiding it left a background-coloured gap
           // in the carriageway. Filled with road asphalt (below) it closes seamlessly.
-          // ground junctions only; elevated ones (layer>=1) are extruded below
           filter: ["all", ["!=", ["get", "intersection_kind"], "MapEdge"], ["<", LYR, 1]],
           layout: { "fill-sort-key": sortKey },
           paint: {
@@ -1298,33 +1313,20 @@
             "fill-opacity": 1
           }
         },
-        ...bandFills("", ["<", LYR, 1]),     // ground / tunnel asphalt + paint
-        // ELEVATED roads (layer>=1 bridges / flyovers): native MapLibre fill-extrusion
-        // decks, lifted to layer×5 m and shaded like the 3D buildings. Replaces the old
-        // flat "-hi" band AND the hand-rolled three.js deck. fill-extrusion can't slope,
-        // so these are flat slabs at altitude (a road steps up onto the deck).
+        ...bandFills("", ["<", LYR, 1]),     // GROUND band fills + markings + arrows
+        // --- ELEVATED band (layer>=1 bridges / flyovers) --- drawn FLAT but ENTIRELY
+        // ON TOP of the whole ground band, so a higher-layer road covers the road,
+        // markings AND arrows it crosses (higher layer wins). Same flat look as before,
+        // correct occlusion — replaces the old raised fill-extrusion decks. Casing is
+        // bolder here (bandEdges scales width by layer), so a bridge reads as on top.
+        ...bandEdges("-hi", [">=", LYR, 1]),
         {
-          id: "lanes-elevated", type: "fill-extrusion", source: "lanes",
-          filter: [">=", LYR, 1], minzoom: 14,
-          paint: {
-            "fill-extrusion-color": "#5b6270",
-            "fill-extrusion-base": ["*", LYR, 5],
-            "fill-extrusion-height": ["+", ["*", LYR, 5], 1.0],
-            "fill-extrusion-opacity": 1,
-            "fill-extrusion-vertical-gradient": true,
-          },
-        },
-        {
-          id: "inter-elevated", type: "fill-extrusion", source: "intersections",
+          id: "intersections-hi", type: "fill", source: "intersections",
           filter: ["all", ["!=", ["get", "intersection_kind"], "MapEdge"], [">=", LYR, 1]],
-          minzoom: 14,
-          paint: {
-            "fill-extrusion-color": "#5b6270",
-            "fill-extrusion-base": ["*", LYR, 5],
-            "fill-extrusion-height": ["+", ["*", LYR, 5], 1.0],
-            "fill-extrusion-opacity": 1,
-          },
+          layout: { "fill-sort-key": sortKey },
+          paint: { "fill-color": "#5b6270", "fill-opacity": 1 }
         },
+        ...bandFills("-hi", [">=", LYR, 1]),
         // traffic-light marker at signalised junctions (control="Signalled")
         {
           id: "inter-signal", type: "symbol", source: "intersections",
@@ -1483,9 +1485,9 @@
       window._m = map;
       window._dataBounds = dataBounds; // press "f" to frame the whole network
 
-      // Elevated roads (layer>=1 bridges/flyovers) are drawn NATIVELY as MapLibre
-      // fill-extrusion decks in the style (see "lanes-elevated") — shaded like the 3D
-      // buildings, no three.js. The old hand-rolled deck overlay lived here.
+      // Elevated roads (layer>=1 bridges/flyovers) render FLAT like every other road,
+      // ordered by the layer sort-key so a bridge still draws on top of what it crosses.
+      // (No fill-extrusion decks / no three.js deck — road elevation was removed.)
 
       // The boot view is fixed (DEFAULT_CENTER, above). That's correct for the
       // default area. But if you've fetched a different region, the loaded data
@@ -1624,16 +1626,282 @@
       const parseWayId = (f) => idList(f.properties.osm_way_ids)[0];
 
       // layer toggles (highlight layers hl-* are declared in the style above)
-      bind("t-lanes", "lanes", "lanes-edge", "lanes-alley", "lanes-service", "lanes-elevated");
-      bind("t-inter", "intersections", "inter-edge", "inter-signal", "inter-elevated");
-      bind("t-mark", "markings");
-      bind("t-turn", "turn-left", "turn-right", "turn-arrows");
+      bind("t-lanes", "lanes", "lanes-edge", "lanes-edge-tun", "lanes-alley", "lanes-service",
+        "lanes-hi", "lanes-edge-hi", "lanes-edge-tun-hi", "lanes-alley-hi", "lanes-service-hi");
+      bind("t-inter", "intersections", "intersections-hi", "inter-edge", "inter-signal");
+      bind("t-mark", "markings", "markings-hi");
+      bind("t-turn", "turn-left", "turn-right", "turn-arrows",
+        "turn-left-hi", "turn-right-hi", "turn-arrows-hi");
       bind("t-bldg", "buildings-3d", "buildings-staged");
       // All-data tab toggles (share the water/green/raw-roads/buildings layers)
       bind("ad-roads", "raw-roads");
       bind("ad-water", "water");
       bind("ad-green", "green");
       bind("ad-bldg", "buildings-3d", "buildings-staged");
+
+      // ======================================================================
+      // 3D BUILDINGS (three.js) — real roof shapes + OSM colours (F4Map look).
+      // fill-extrusion can only make flat-topped boxes, so above BLDG_Z we take the
+      // buildings over with a three.js mesh built from the building features in view:
+      // walls extruded base->eave, then a roof SOLID raised eave->top per OSM
+      // roof:shape (gabled/hipped/skillion/pyramidal/dome/…), coloured from
+      // building:colour / roof:colour (or a per-block earth tone). Below BLDG_Z the
+      // native fill-extrusion still paints the whole city cheaply. querySourceFeatures
+      // returns exactly what's in view (free culling) — we just rebuild on moveend.
+      // The roof shape is raised on the footprint's min-area rectangle (most detailed
+      // buildings are rectangular); a flat cap at the eave hides footprint/box mismatch.
+      // Ported from the MVP-3D-MAP viewer (roof/colour tags come from build.mjs).
+      //
+      // One WebGLRenderer shared on MapLibre's GL context (autoClear off + resetState
+      // each frame) — separate renderers on the same context clobber each other's state.
+      let _navRenderer = null;
+      const navRenderer = (m, gl) => {
+        if (!_navRenderer) {
+          _navRenderer = new THREE.WebGLRenderer({ canvas: m.getCanvas(), context: gl, antialias: true });
+          _navRenderer.autoClear = false;
+        }
+        return _navRenderer;
+      };
+      const BLDG_Z = 16;        // three.js buildings take over from fill-extrusion here
+      const BLDG_MAX = 12000;   // safety cap on plain buildings meshed per view
+      const BLDG_FILL_OPACITY = 0.92; // matches the buildings-3d fill-extrusion default
+      // bldg3dEnabled = the user's t-bldg3d toggle (default OFF — the mesh is heavy).
+      // bldg3dOn = whether the mesh is CURRENTLY driving (enabled AND zoomed past BLDG_Z).
+      let bldgDark = false, bldg3dOn = false, bldg3dEnabled = false;
+      // mesh follows the fill-extrusion's own visibility, so the t-bldg / ad-bldg
+      // toggles (which set buildings-3d visibility) hide the mesh too. A handoff
+      // (opacity 0) leaves visibility "visible", so it's distinct from a user-hide.
+      const bldgVisibleNow = () => !map.getLayer("buildings-3d")
+        || map.getLayoutProperty("buildings-3d", "visibility") !== "none";
+      const BLDG_TONES = [0xc7c0ac, 0xb3ac98, 0xc1b9a4, 0xa9a28e, 0xcac3b0, 0xb8b19d];
+      const MAT_TINT = { glass: 0x9fb6c9, mirror: 0x9fb6c9, brick: 0x9c5a44, concrete: 0xb8b5ad,
+        cement_block: 0xb8b5ad, stone: 0xb0a894, wood: 0x9c7b4f, plaster: 0xd9d2c2, marble: 0xe6e2da,
+        metal: 0xb9c0c7, metal_sheet: 0xb9c0c7, copper: 0x59a68a };
+      const ROOF_MAT_TINT = { roof_tiles: 0xa0512f, tile: 0xa0512f, metal: 0x9aa0a6, metal_sheet: 0x9aa0a6,
+        concrete: 0xb0ada4, glass: 0x9fb6c9, copper: 0x59a68a, slate: 0x55606b, thatch: 0xb08a4f };
+      const safeColor = (s) => { if (!s) return null; try { const c = new THREE.Color(s); return c; } catch (_) { return null; } };
+      const toneFor = (id) => new THREE.Color(BLDG_TONES[(((parseInt(id, 10) || 0) % 6) + 6) % 6]);
+      const wallColorOf = (p) => bldgDark ? new THREE.Color(0x00e5ff)
+        : (safeColor(p.colour) || (p.material && MAT_TINT[p.material] && new THREE.Color(MAT_TINT[p.material])) || toneFor(p.osm_way_id));
+      const roofColorOf = (p, wc) => bldgDark ? new THREE.Color(0x0a7d92)
+        : (safeColor(p.roof_colour) || (p.roof_material && ROOF_MAT_TINT[p.roof_material] && new THREE.Color(ROOF_MAT_TINT[p.roof_material]))
+          || ((!p.roof_shape || p.roof_shape === "flat") ? wc.clone() : new THREE.Color(0x8f8377)));
+      const normShape = (s) => { if (!s) return "flat"; s = String(s).toLowerCase();
+        if (s === "pitched") return "gabled"; if (s === "pyramid") return "pyramidal";
+        if (s.indexOf("saltbox") >= 0 || s === "gambrel" || s === "half-hipped") return "gabled";
+        return s; };
+      // smallest-area enclosing rectangle (rotating calipers on the convex hull) — the
+      // roof is raised on this box so gables/hips get a clean ridge regardless of the
+      // footprint's vertex order.
+      const convexHull = (P) => {
+        const pts = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        if (pts.length < 3) return pts;
+        const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+        const lo = []; for (const p of pts) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+        const up = []; for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+        lo.pop(); up.pop(); return lo.concat(up);
+      };
+      const minAreaRect = (P) => {
+        const h = convexHull(P);
+        if (h.length < 3) { // degenerate → axis-aligned bbox
+          let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+          for (const p of P) { a = Math.min(a, p[0]); b = Math.min(b, p[1]); c = Math.max(c, p[0]); d = Math.max(d, p[1]); }
+          return { cx: (a + c) / 2, cy: (b + d) / 2, ux: 1, uy: 0, vx: 0, vy: 1, a: (c - a) / 2 || 1e-9, b: (d - b) / 2 || 1e-9 };
+        }
+        let best = null;
+        for (let i = 0; i < h.length; i++) {
+          const a = h[i], b = h[(i + 1) % h.length];
+          let ex = b[0] - a[0], ey = b[1] - a[1]; const L = Math.hypot(ex, ey) || 1; ex /= L; ey /= L;
+          let mnu = Infinity, mxu = -Infinity, mnv = Infinity, mxv = -Infinity;
+          for (const p of h) { const du = p[0] * ex + p[1] * ey, dv = -p[0] * ey + p[1] * ex;
+            mnu = Math.min(mnu, du); mxu = Math.max(mxu, du); mnv = Math.min(mnv, dv); mxv = Math.max(mxv, dv); }
+          const area = (mxu - mnu) * (mxv - mnv);
+          if (!best || area < best.area) best = { area, ex, ey, mnu, mxu, mnv, mxv };
+        }
+        const { ex, ey, mnu, mxu, mnv, mxv } = best, cu = (mnu + mxu) / 2, cv = (mnv + mxv) / 2;
+        return { cx: cu * ex - cv * ey, cy: cu * ey + cv * ex, ux: ex, uy: ey, vx: -ey, vy: ex,
+          a: Math.max(1e-9, (mxu - mnu) / 2), b: Math.max(1e-9, (mxv - mnv) / 2) };
+      };
+      const swapAxes = (box) => { const t = box.a; box.a = box.b; box.b = t;
+        let s = box.ux; box.ux = box.vx; box.vx = s; s = box.uy; box.uy = box.vy; box.vy = s; };
+      const roofHeightM = (p, box, meterUnit, shape) => {
+        if (!shape || shape === "flat") return 0;
+        if (p.roof_height != null) return +p.roof_height;
+        const halfShortM = Math.min(box.a, box.b) / meterUnit;
+        if (p.roof_angle != null) return Math.tan(Math.min(60, Math.max(1, +p.roof_angle)) * Math.PI / 180) * halfShortM;
+        if (shape === "skillion") return Math.min(0.25 * (+p.height || 6), 4);
+        return Math.min(4, Math.max(1.5, 0.4 * (+p.height || 6)));
+      };
+      const buildBuildingsMesh = () => {
+        if (typeof THREE === "undefined") return null;
+        let feats = [];
+        try { feats = map.querySourceFeatures("buildings"); } catch (_) { return null; }
+        if (!feats.length) return null;
+        const M = maplibregl.MercatorCoordinate, c0 = map.getCenter();
+        const origin = M.fromLngLat({ lng: c0.lng, lat: c0.lat }, 0), meterUnit = origin.meterInMercatorCoordinateUnits();
+        const toLocal = (lng, lat) => { const m = M.fromLngLat({ lng, lat }, 0); return new THREE.Vector2(m.x - origin.x, m.y - origin.y); };
+        const pos = [], col = [];
+        const pushTriC = (A, B, C, ca, cb, cc) => {
+          pos.push(A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]);
+          col.push(ca.r, ca.g, ca.b, cb.r, cb.g, cb.b, cc.r, cc.g, cc.b);
+        };
+        const pushTri = (A, B, C, c) => pushTriC(A, B, C, c, c, c);
+        const pushQuad = (A, B, C, D, c) => { pushTri(A, B, C, c); pushTri(A, C, D, c); };
+        const addWalls = (ring, zLo, zHi, c) => {
+          const cLo = c.clone().multiplyScalar(0.66); // shade darker toward the ground
+          for (let i = 0; i < ring.length; i++) {
+            const a = ring[i], b = ring[(i + 1) % ring.length];
+            const A = [a.x, a.y, zHi], B = [b.x, b.y, zHi], C = [b.x, b.y, zLo], D = [a.x, a.y, zLo];
+            pushTriC(A, B, C, c, c, cLo); pushTriC(A, C, D, c, cLo, cLo);
+          }
+        };
+        const addCap = (rings, z, c) => {
+          const outer = rings[0], holes = rings.slice(1);
+          let faces; try { faces = THREE.ShapeUtils.triangulateShape(outer, holes); } catch (_) { return; }
+          const all = outer.concat(...holes);
+          for (const f of faces) pushTri([all[f[0]].x, all[f[0]].y, z], [all[f[1]].x, all[f[1]].y, z], [all[f[2]].x, all[f[2]].y, z], c);
+        };
+        const addRoof = (box, zE, zT, shape, c) => {
+          const bp = (su, sv, z) => [box.cx + box.ux * su * box.a + box.vx * sv * box.b, box.cy + box.uy * su * box.a + box.vy * sv * box.b, z];
+          const E00 = bp(-1, -1, zE), E10 = bp(1, -1, zE), E11 = bp(1, 1, zE), E01 = bp(-1, 1, zE);
+          if (shape === "gabled") {
+            const R0 = bp(-1, 0, zT), R1 = bp(1, 0, zT);
+            pushQuad(E00, E10, R1, R0, c); pushQuad(E11, E01, R0, R1, c);
+            pushTri(E00, R0, E01, c); pushTri(E10, E11, R1, c);
+          } else if (shape === "hipped" || shape === "mansard" || shape === "pyramidal") {
+            const hr = shape === "pyramidal" ? 0 : Math.max(0, 1 - box.b / box.a);
+            const R0 = bp(-hr, 0, zT), R1 = bp(hr, 0, zT);
+            pushQuad(E00, E10, R1, R0, c); pushQuad(E11, E01, R0, R1, c);
+            pushTri(E00, R0, E01, c); pushTri(E10, E11, R1, c);
+          } else if (shape === "skillion") {
+            const s = box.hiSign || 1;
+            const L0 = bp(-1, -s, zE), L1 = bp(1, -s, zE), H1 = bp(1, s, zT), H0 = bp(-1, s, zT);
+            pushQuad(L0, L1, H1, H0, c);
+            pushTri(L0, H0, bp(-1, s, zE), c); pushTri(L1, bp(1, s, zE), H1, c);
+          } else if (shape === "dome" || shape === "onion" || shape === "round") {
+            const r = Math.min(box.a, box.b), N = 12, seg = 16, H = zT - zE;
+            const prof = (t) => shape === "onion"
+              ? { rr: r * Math.max(0, Math.cos(t * Math.PI / 2) + 0.35 * Math.sin(t * Math.PI) * (1 - t)), zz: zE + H * Math.pow(Math.sin(t * Math.PI / 2), 0.7) }
+              : { rr: r * Math.cos(t * Math.PI / 2), zz: zE + H * Math.sin(t * Math.PI / 2) };
+            const P = (rad, ang, z) => [box.cx + (Math.cos(ang) * box.ux + Math.sin(ang) * box.vx) * rad, box.cy + (Math.cos(ang) * box.uy + Math.sin(ang) * box.vy) * rad, z];
+            let prev = prof(0);
+            for (let sI = 1; sI <= N; sI++) {
+              const cur = prof(sI / N);
+              for (let aI = 0; aI < seg; aI++) {
+                const a0 = aI / seg * 2 * Math.PI, a1 = (aI + 1) / seg * 2 * Math.PI;
+                pushQuad(P(prev.rr, a0, prev.zz), P(prev.rr, a1, prev.zz), P(cur.rr, a1, cur.zz), P(cur.rr, a0, cur.zz), c);
+              }
+              prev = cur;
+            }
+          }
+        };
+        const addBuilding = (poly, p) => {
+          const rings = poly.map((r) => { const v = r.map((cc) => toLocal(cc[0], cc[1]));
+            if (v.length > 1 && v[0].x === v[v.length - 1].x && v[0].y === v[v.length - 1].y) v.pop(); return v; }).filter((r) => r.length >= 3);
+          if (!rings.length) return;
+          const zBase = (+p.base || 0) * meterUnit, hM = (+p.height || 6);
+          const box = minAreaRect(rings[0].map((v) => [v.x, v.y]));
+          if (box.a < box.b) swapAxes(box); // U = long axis
+          const shape = normShape(p.roof_shape);
+          if (p.roof_orientation === "across" && (shape === "gabled" || shape === "hipped")) swapAxes(box);
+          const roofHm = roofHeightM(p, box, meterUnit, shape);
+          const zTop = hM * meterUnit, zEave = Math.max(zBase, (hM - roofHm) * meterUnit);
+          const wc = wallColorOf(p), rc = roofColorOf(p, wc);
+          box.hiSign = 1;
+          if (shape === "skillion" && p.roof_direction != null) {
+            const rad = (+p.roof_direction) * Math.PI / 180, dv = [Math.sin(rad), -Math.cos(rad)]; // downslope (local north = -y)
+            if (Math.abs(dv[0] * box.ux + dv[1] * box.uy) > Math.abs(dv[0] * box.vx + dv[1] * box.vy)) swapAxes(box);
+            box.hiSign = (dv[0] * box.vx + dv[1] * box.vy) > 0 ? -1 : 1; // high side opposite the downslope
+          }
+          if (!p.roof_only) for (const r of rings) addWalls(r, zBase, zEave, wc);
+          addCap(rings, zEave, rc);
+          if (roofHm > 0.05) addRoof(box, zEave, zTop, shape, rc);
+        };
+        const seen = new Set(); let n = 0;
+        // detailed buildings (roof/colour) first so they always survive the cap
+        feats.sort((a, b) => ((b.properties.roof_shape || b.properties.colour) ? 1 : 0) - ((a.properties.roof_shape || a.properties.colour) ? 1 : 0));
+        for (const f of feats) {
+          const p = f.properties, key = p.osm_type + "/" + p.osm_way_id;
+          if (seen.has(key)) continue; seen.add(key);
+          if (n >= BLDG_MAX && !(p.roof_shape || p.colour)) continue;
+          const g = f.geometry, polys = g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : [];
+          for (const poly of polys) addBuilding(poly, p);
+          n++;
+        }
+        if (!pos.length) return null;
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+        geo.computeVertexNormals();
+        const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.05, side: THREE.DoubleSide }));
+        mesh.userData.origin = origin;
+        return mesh;
+      };
+      const bldgLayer = {
+        id: "buildings-3d-mesh", type: "custom", renderingMode: "3d",
+        onAdd(m, gl) {
+          this.camera = new THREE.Camera(); this.scene = new THREE.Scene();
+          this.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+          const d1 = new THREE.DirectionalLight(0xffffff, 0.6); d1.position.set(0.5, -0.7, 1.1); this.scene.add(d1);
+          const d2 = new THREE.DirectionalLight(0xdfe8ff, 0.25); d2.position.set(-0.6, 0.4, 0.5); this.scene.add(d2);
+          this.renderer = navRenderer(m, gl); // default off → no mesh built until enabled
+        },
+        clearMesh() {
+          if (this.mesh) { this.scene.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh.material.dispose(); this.mesh = null; }
+        },
+        rebuild() {
+          if (!this.scene) return;
+          this.clearMesh();
+          this.mesh = buildBuildingsMesh(); if (this.mesh) this.scene.add(this.mesh); map.triggerRepaint();
+        },
+        render(gl, matrix) {
+          if (!this.mesh || !bldg3dOn || !bldgVisibleNow()) return;
+          const mArr = Array.isArray(matrix) ? matrix
+            : (matrix && matrix.defaultProjectionData ? matrix.defaultProjectionData.mainMatrix : matrix && matrix.mainMatrix);
+          if (!mArr) return;
+          const o = this.mesh.userData.origin;
+          this.camera.projectionMatrix = new THREE.Matrix4().fromArray(mArr).multiply(new THREE.Matrix4().makeTranslation(o.x, o.y, o.z));
+          this.renderer.resetState(); this.renderer.render(this.scene, this.camera);
+        },
+      };
+      let bldgAdded = false, bldgTimer = null;
+      const addBldgLayer = () => { if (bldgAdded || typeof THREE === "undefined") return; try { map.addLayer(bldgLayer); bldgAdded = true; } catch (_) {} };
+      const scheduleBldgRebuild = () => { if (bldgTimer) clearTimeout(bldgTimer); bldgTimer = setTimeout(() => { bldgTimer = null; if (bldgAdded && bldg3dOn) bldgLayer.rebuild(); }, 140); };
+      // Hand off between fill-extrusion (low zoom, cheap) and the three.js mesh (high
+      // zoom, detailed). The fill-extrusion layer is kept but made invisible above the
+      // handoff (opacity 0) so its features stay queryable for the click popup / editing.
+      const updateBldgMode = () => {
+        // the mesh only drives when the user enabled it AND we're zoomed in past BLDG_Z;
+        // otherwise the cheap fill-extrusion paints the buildings (default state).
+        const on = bldg3dEnabled && map.getZoom() >= BLDG_Z;
+        if (on !== bldg3dOn) {
+          bldg3dOn = on;
+          if (map.getLayer("buildings-3d")) map.setPaintProperty("buildings-3d", "fill-extrusion-opacity", on ? 0 : BLDG_FILL_OPACITY);
+          if (!on && bldgAdded) bldgLayer.clearMesh(); // free the heavy mesh when handing back
+          map.triggerRepaint();
+        }
+        if (on) scheduleBldgRebuild();
+      };
+      // recolour with the theme (rebuild regenerates vertex colours) — no night mode
+      // in the editor today, so this stays inert unless something flips bldgDark.
+      window._setBldgTheme = (dark) => { bldgDark = dark; if (bldgAdded && bldg3dOn) scheduleBldgRebuild(); };
+      // t-bldg3d: opt in to the heavy detailed-roof mesh (default OFF). Turning it on
+      // hands off to the mesh if already zoomed in; off restores the fill-extrusion.
+      const bldg3dToggle = document.getElementById("t-bldg3d");
+      if (bldg3dToggle) bldg3dToggle.addEventListener("change", (e) => {
+        bldg3dEnabled = e.target.checked;
+        updateBldgMode();
+      });
+      const initBldgLayer = () => {
+        addBldgLayer();                     // detailed 3D buildings (roofs/colours) above BLDG_Z
+        map.on("moveend", updateBldgMode);  // new features in view → rebuild the mesh
+        map.on("zoom", updateBldgMode);     // cross the fill-extrusion ↔ mesh handoff
+        // editor: fetching / editing / submitting buildings replaces the source data,
+        // so rebuild the mesh whenever the buildings source finishes reloading.
+        map.on("sourcedata", (e) => { if (e.sourceId === "buildings" && e.isSourceLoaded && bldg3dOn) scheduleBldgRebuild(); });
+        updateBldgMode();
+      };
+      if (map.isStyleLoaded()) initBldgLayer(); else map.on("load", initBldgLayer);
 
       // 3D view: tilt the camera (buildings/bridges rise once pitched). Off =
       // today's top-down. dragRotate/touchPitch stay live for manual control.
@@ -1749,14 +2017,18 @@
       // [layer id, paint prop, base opacity] for every HD layer the slider fades
       const HD_OPACITY = [
         ["lanes", "fill-opacity", 1],
-        ["lanes-edge", "line-opacity", 1],
+        ["lanes-edge", "line-opacity", 1], ["lanes-edge-tun", "line-opacity", 1],
         ["markings", "fill-opacity", 0.9],
         ["turn-left", "fill-opacity", 0.55],
         ["turn-right", "fill-opacity", 0.55],
         ["intersections", "fill-opacity", 1], ["inter-edge", "line-opacity", 0.9],
         ["turn-arrows", "icon-opacity", 1],
-        // elevated fill-extrusion decks fade too, so imagery stays readable underneath
-        ["lanes-elevated", "fill-extrusion-opacity", 1], ["inter-elevated", "fill-extrusion-opacity", 1],
+        // elevated band (layer>=1) — same props, so the slider fades both bands together
+        ["lanes-hi", "fill-opacity", 1], ["lanes-edge-hi", "line-opacity", 1],
+        ["lanes-edge-tun-hi", "line-opacity", 1],
+        ["markings-hi", "fill-opacity", 0.9],
+        ["turn-left-hi", "fill-opacity", 0.55], ["turn-right-hi", "fill-opacity", 0.55],
+        ["intersections-hi", "fill-opacity", 1], ["turn-arrows-hi", "icon-opacity", 1],
       ];
       // always-visible bottom-left bar; also fades the 3D buildings so imagery
       // stays readable underneath them
@@ -1786,10 +2058,9 @@
       });
       const setSrc = (id, data) => { const s = map.getSource(id); if (s) s.setData(data); };
 
-      // interactions must cover BOTH the ground lanes and the elevated decks, else
-      // overpass/bridge lanes (layer>=1, now the "lanes-elevated" fill-extrusion)
-      // aren't hoverable/clickable. queryRenderedFeatures works on fill-extrusion too.
-      const LANE_LAYERS = ["lanes", "lanes-elevated"];
+      // lanes render flat in two bands (ground "lanes" + elevated "lanes-hi"); both
+      // must be hoverable/clickable so bridge/flyover lanes stay pickable.
+      const LANE_LAYERS = ["lanes", "lanes-hi"];
       // when features overlap (overpass over road), pick the topmost = highest layer
       const topWayId = (feats) => {
         const f = feats.slice().sort(
@@ -1842,14 +2113,17 @@
         if (wid) { select("way", wid); openEditor("way", wid); }
       });
       // click an intersection -> edit its OSM node's tags (traffic_signals, …)
-      map.on("mouseenter", "intersections", () => (map.getCanvas().style.cursor = "pointer"));
-      map.on("mouseleave", "intersections", () => (map.getCanvas().style.cursor = ""));
-      map.on("click", "intersections", (e) => {
-        // a lane on top of the junction takes priority (handled above)
-        if (map.queryRenderedFeatures(e.point, { layers: LANE_LAYERS }).length) return;
-        const nid = nodeIdsOf(e.features[0])[0];
-        if (nid) { select("node", nid); openEditor("node", nid); }
-      });
+      // both junction bands (ground + elevated) are interactive
+      for (const iLayer of ["intersections", "intersections-hi"]) {
+        map.on("mouseenter", iLayer, () => (map.getCanvas().style.cursor = "pointer"));
+        map.on("mouseleave", iLayer, () => (map.getCanvas().style.cursor = ""));
+        map.on("click", iLayer, (e) => {
+          // a lane on top of the junction takes priority (handled above)
+          if (map.queryRenderedFeatures(e.point, { layers: LANE_LAYERS }).length) return;
+          const nid = nodeIdsOf(e.features[0])[0];
+          if (nid) { select("node", nid); openEditor("node", nid); }
+        });
+      }
 
       // click a building -> edit its inferred height (independent layer). Roads
       // take priority: if a lane is also under the cursor, that click is handled
@@ -1947,7 +2221,7 @@
       const QUICK_NODE = ["highway", "crossing", "traffic_calming",
         "stop", "give_way", "railway", "barrier"];
       const QUICK_BUILDING = ["height", "building:levels", "min_height",
-        "building:min_level", "building", "name"];
+        "building:min_level", "building", "building:part", "name"];
 
       const addRow = (k = "", v = "") => {
         const row = document.createElement("div");
@@ -2044,7 +2318,10 @@
         if (p.levels != null) tags["building:levels"] = String(p.levels);
         if (p.base != null && Number(p.base) > 0) tags["min_height"] = String(p.base);
         if (p.min_level != null) tags["building:min_level"] = String(p.min_level);
+        // preserve the ORIGINAL key: a part stays building:part, a building stays
+        // building — never rewrite a part as a whole building (bad OSM edit).
         if (p.building != null) tags["building"] = String(p.building);
+        if (p.building_part != null) tags["building:part"] = String(p.building_part);
         if (p.name != null) tags["name"] = String(p.name);
         editingOrig = { ...tags };
         Object.entries(tags).forEach(([k, v]) => addRow(k, v));
@@ -2365,6 +2642,7 @@
           f.properties.levels = tags["building:levels"] ?? null;
           f.properties.min_level = tags["building:min_level"] ?? null;
           f.properties.building = tags["building"] ?? f.properties.building ?? null;
+          f.properties.building_part = tags["building:part"] ?? f.properties.building_part ?? null;
           f.properties.name = tags["name"] ?? f.properties.name ?? null;
           map.getSource("buildings")?.setData(shrinkBuildings(currentBuildings));
         }
@@ -2681,6 +2959,7 @@
         // OSM tags, so round-trip them to the real keys rather than uploading junk.
         const KEY_ALIAS = {
           base: "min_height", min_level: "building:min_level", levels: "building:levels",
+          building_part: "building:part", // internal prop → real OSM key (not building_part=)
         };
         const KEY_DROP = new Set(["osm_way_id", "osm_type", "osm_id", "type", "height_source"]);
         const remapped = new Set(), dropped = new Set();
