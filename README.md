@@ -121,6 +121,15 @@ PMTiles archive): MapLibre v5 errors on gzipped tiles unless the server sends
 `Content-Encoding: gzip`, which GitHub Pages can't do for `.pbf`. Raw MVT renders
 everywhere with no headers.
 
+That reasoning is about **plain static file hosting**, and it is why the *city*
+bake ships a directory. The `national-map` tool (a separate repo) ships a
+**PMTiles archive** instead and is not a contradiction: a PMTiles reader fetches
+tile ranges with HTTP `Range` requests and gunzips them itself, so the server
+never has to set `Content-Encoding`. The trade is that it needs a PMTiles-aware
+client (`pmtiles serve`, or the `pmtiles://` protocol in MapLibre) rather than
+plain `<img>`-style tile URLs — and at 2.27 M files a whole-country directory
+would be unusable in git anyway.
+
 ### The pipeline (all built here)
 
 ```
@@ -171,6 +180,19 @@ caps at `MAXZOOM` (18 here). Baking to z18 keeps the close-up drive view crisp
 halves the tile size at the cost of soft close-ups. The `KEEP` list in
 `bake-tiles.sh` is the attribute allowlist — `osm_way_ids` + `direction` must stay
 in it for lane-level guidance to work.
+
+### Whole-country coverage — see the `national-map` tool
+
+Country-scale coverage is a **separate tool**, `../national-map/`, not part of this
+repo. It ships osm2streets' *input* (road centrelines + the lane spec, plus building
+footprints) and generates lane bodies, markings and lane arrows at render time,
+instead of baking every lane polygon. Measured on `vietnam-latest.osm.pbf`: **~412 MB
+in one PMTiles file, ~6 min to bake**, against 13.8 GB across 2.27 M files for the HD
+pipeline projected nationally.
+
+It is **not** a replacement for this bake: it has no osm2streets intersection
+polygons and no real turn arrows. The intended shape is this HD bake over the city
+cores you care about, layered on that national backdrop.
 
 ### Beyond one city
 - **Two-tier style.** HD lane geometry only reads at z15+. Below that, fall back

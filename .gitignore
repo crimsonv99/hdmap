@@ -9,7 +9,11 @@ node_modules/
 # Not needed by the hosted city viewer (index.html uses ./tiles):
 #  - the single PMTiles archive (regenerable source for the tiles)
 #  - the original single-district GeoJSON demo data
-data/hanoi.pmtiles
+# Glob, not exact names. The repo already carries ~270 MB of baked tiles/data —
+# CLAUDE.md calls that "the accepted trade" — so a second archive must never slip
+# in just because its filename wasn't listed. (The national-map tool keeps its own
+# archive in its own repo.)
+data/*.pmtiles
 data/lanes.geojson
 data/markings.geojson
 data/intersections.geojson
