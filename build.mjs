@@ -361,7 +361,11 @@ export function buildingsFromOsm(osmXml) {
     ways.set(w.getAttribute("id"), { refs, tags: readTags(w) });
   }
 
-  const features = [];
+  // CANDIDATES, not finished features. The Simple 3D Buildings rule in step 3 needs
+  // every outline AND every part in hand before it can decide any of them: a part can
+  // inherit its outline's height, and an outline's fate depends on where its parts
+  // start. Sections 1 and 2 therefore only collect; step 3 emits.
+  const cand = [];
   // ways already drawn as part of a building relation — don't draw them twice
   // (old-style tagging sometimes repeats building=* on the outer way)
   const consumed = new Set();
@@ -381,6 +385,18 @@ export function buildingsFromOsm(osmXml) {
       if (m.getAttribute("type") !== "way") continue;
       const ref = m.getAttribute("ref");
       const role = m.getAttribute("role") || "outer"; // blank role = outer by convention
+      // A `part` member of a `type=building` relation is an S3DB SUB-VOLUME, not a piece
+      // of the outline's boundary. Two things went wrong by treating it as one:
+      //   * it fell into the `else` branch and was assembled as an OUTER RING, so Đoan Môn
+      //     Gate (r9678879) became a MultiPolygon of 10 overlapping rings — its outline
+      //     plus its 9 parts — all drawn at the relation's single height.
+      //   * it was marked `consumed`, so section 2 skipped it and the part was NEVER
+      //     emitted in its own right. 22 parts were lost this way, 10 of them carrying
+      //     roof:shape / colour / material — the only tags the Ultra mesh exists to draw.
+      // Skipped BEFORE `consumed`, so the part flows to section 2 and renders as a volume.
+      // Roles `outer` / `inner` / `outline` are untouched: on the 8 multipolygon buildings
+      // whose members happen to carry `building:part`, those ways really are the boundary.
+      if (role === "part" || role === "building:part") continue;
       if (role === "inner") innerIds.push(ref);
       else outerIds.push(ref);
       consumed.add(ref);
@@ -394,49 +410,16 @@ export function buildingsFromOsm(osmXml) {
       const idx = polys.findIndex((p) => pointInRing(hole[0], p[0]));
       if (idx >= 0) polys[idx].push(hole); // orphan holes are dropped, not mis-assigned
     }
-    features.push({
-      type: "Feature",
+    cand.push({
       geometry: polys.length === 1
         ? { type: "Polygon", coordinates: polys[0] }
         : { type: "MultiPolygon", coordinates: polys },
-      properties: buildingProps(tags, r.getAttribute("id"), "relation"),
+      tags,
+      props: buildingProps(tags, r.getAttribute("id"), "relation"),
     });
   }
 
   // ---- 2. plain closed WAYS tagged building=* / building:part=* -------------
-  // Simple 3D Buildings rule (detailed-building-tagging.md §0): when building:part
-  // sub-volumes TILE a building, the outline is metadata only — the renderer draws
-  // the PARTS, not the outline (emitting both double-renders the outline's flat box
-  // under the detailed parts). BUT most OSM buildings are only PARTIALLY parted (a
-  // station with one tower part, a landmark with a stray neighbour part inside), and
-  // dropping those outlines makes real named buildings vanish. So we suppress an
-  // outline only when the parts whose centroid lands inside it COVER most of its
-  // footprint (≥ COVER_FRAC). Each part stores its centroid + area up front.
-  const COVER_FRAC = 0.7; // parts must tile ≥70% of the outline to replace it
-  const partVols = [];
-  for (const [, w] of ways) {
-    const bp = w.tags["building:part"];
-    if (!bp || bp === "no") continue;
-    const r = [];
-    for (const ref of w.refs) { const p = nodes.get(ref); if (p) r.push(p); }
-    if (r.length < 3) continue;
-    let x = 0, y = 0; for (const p of r) { x += p[0]; y += p[1]; }
-    partVols.push({ c: [x / r.length, y / r.length], a: ringArea(r) });
-  }
-  // true when contained building:part sub-volumes tile most of this outline
-  const partsTileOutline = (ring) => {
-    if (!partVols.length) return false;
-    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
-    for (const p of ring) { if (p[0] < minx) minx = p[0]; if (p[0] > maxx) maxx = p[0]; if (p[1] < miny) miny = p[1]; if (p[1] > maxy) maxy = p[1]; }
-    const outlineArea = ringArea(ring);
-    if (outlineArea <= 0) return false;
-    let covered = 0;
-    for (const q of partVols) {
-      if (q.c[0] < minx || q.c[0] > maxx || q.c[1] < miny || q.c[1] > maxy) continue; // bbox reject
-      if (pointInRing(q.c, ring)) covered += q.a;
-    }
-    return covered >= COVER_FRAC * outlineArea;
-  };
   for (const [id, w] of ways) {
     if (consumed.has(id)) continue;
     if (!isBuildingTags(w.tags)) continue;
@@ -446,17 +429,128 @@ export function buildingsFromOsm(osmXml) {
     const first = ring[0], last = ring[ring.length - 1];
     if (first[0] !== last[0] || first[1] !== last[1]) ring.push([first[0], first[1]]); // close it
     if (ring.length < 4) continue;
-    // an outline (building=*, not itself a part) is skipped ONLY when its parts tile
-    // most of it — then the building:part sub-volumes render instead (S3DB §0). A
-    // partially-parted building keeps its outline so it doesn't vanish. Parts always render.
-    const isPart = w.tags["building:part"] && w.tags["building:part"] !== "no";
-    if (!isPart && partsTileOutline(ring)) continue;
-    features.push({
-      type: "Feature",
+    cand.push({
       geometry: { type: "Polygon", coordinates: [ring] },
-      properties: buildingProps(w.tags, id, "way"),
+      tags: w.tags,
+      props: buildingProps(w.tags, id, "way"),
     });
   }
+
+  // ---- 3. Simple 3D Buildings: resolve outlines against their parts ---------
+  // When `building:part` sub-volumes exist, the `building=*` OUTLINE is metadata only
+  // and the renderer is meant to draw the PARTS (S3DB §0, detailed-building-tagging.md).
+  // Emitting both double-renders the outline's flat box through the detailed parts.
+  //
+  // The naive reading of that — "drop any outline containing a part" — is what this
+  // file used to do, and it is wrong in two directions, both observed in the Hanoi bake:
+  //
+  //  1. PARTS THAT DON'T REACH THE GROUND. Parts are volumes with their own `min_height`,
+  //     so a tower described as podium + shaft has parts starting ABOVE ground: Tòa nhà
+  //     Tasco (way 845002110) has an outline at height=20 — the podium — and two parts
+  //     starting at 20 m and 108 m. Dropping the outline left nothing between 0 and 20 m
+  //     and the building hung in the air. 7 buildings in this bake did that.
+  //  2. PARTIALLY-PARTED BUILDINGS. Most parted buildings have ONE tower part inside a
+  //     much larger footprint. There the outline is the only description of the rest of
+  //     the mass, so dropping it deletes most of the building.
+  //
+  // So an outline is suppressed only when its parts genuinely stand in for it: they
+  // reach the ground AND cover most of its footprint. Otherwise it is KEPT and CLIPPED
+  // to where its parts begin, which is what stops it hiding them.
+  //
+  // This file previously had the COVERAGE half only, which was not enough: Tasco's parts
+  // cover 101% of its outline, so coverage alone still dropped the podium and left the
+  // tower floating. The floating half is ported from national-map/bake-national.mjs,
+  // which grew the full rule at country scale. The CODE below is kept identical to
+  // MVP-3D-MAP/lib/build.mjs — only this provenance note differs. Hand-synced, since the
+  // repos cannot import each other.
+  //
+  // NOTHING ENFORCES THAT. check-sync.mjs invariant 3 compares export NAMES only and
+  // invariant 4 covers `buildingProps`' property names; neither sees these ~100 lines or
+  // the `height_source` values set below. Touch one copy, diff the other by hand — this
+  // rule has already drifted into three different answers across the three repos once.
+  const GROUND_EPS = 0.5;   // a part within 50 cm of the ground counts as reaching it
+  const PART_COVER = 0.7;   // below this share of the footprint the parts don't stand in
+  const outerRings = (g) =>
+    g.type === "Polygon" ? [g.coordinates[0]] : g.coordinates.map((p) => p[0]);
+  const ringCentroid = (ring) => {
+    const n = ring.length - 1 || ring.length;    // a closed ring repeats its first point
+    let x = 0, y = 0;
+    for (let i = 0; i < n; i++) { x += ring[i][0]; y += ring[i][1]; }
+    return [x / n, y / n];
+  };
+  const isPartTags = (t) => t["building:part"] != null && t["building:part"] !== "no";
+  // Part records carry `top` separately from props.height because height INHERITANCE
+  // below can raise it, and `top` is the basis for the partial-coverage clip.
+  const parts = [], outlines = [];
+  for (const c of cand) {
+    if (isPartTags(c.tags)) {
+      let a = 0;
+      for (const r of outerRings(c.geometry)) a += ringArea(r);
+      parts.push({ c: ringCentroid(outerRings(c.geometry)[0]), a,
+        base: c.props.base || 0, top: c.props.height, cand: c });
+    } else outlines.push(c);
+  }
+  const features = [];
+  for (const o of outlines) {
+    let matched = [], minBase = Infinity, partArea = 0, outlineArea = 0;
+    if (parts.length) {
+      for (const ring of outerRings(o.geometry)) {
+        outlineArea += ringArea(ring);
+        let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+        for (const p of ring) {
+          if (p[0] < minx) minx = p[0]; if (p[0] > maxx) maxx = p[0];
+          if (p[1] < miny) miny = p[1]; if (p[1] > maxy) maxy = p[1];
+        }
+        for (const r of parts) {
+          if (r.c[0] < minx || r.c[0] > maxx || r.c[1] < miny || r.c[1] > maxy) continue;
+          if (matched.includes(r) || !pointInRing(r.c, ring)) continue;
+          matched.push(r);
+          if (r.base < minBase) minBase = r.base;
+          partArea += r.a;
+        }
+      }
+    }
+    let clipH = null;
+    if (matched.length) {
+      // INHERITANCE, before any decision. A part carrying only `building:part=yes` is
+      // expressing a footprint SUBDIVISION, not a volume — it has no height of its own,
+      // and letting it stand in for its outline collapses a real tower to the 6 m
+      // default. Such a part takes the outline's height and name. Provenance becomes
+      // "outline", never "tag": it is still not a surveyed value for this object.
+      for (const r of matched) {
+        if (o.props.name && !r.cand.props.name) r.cand.props.name = o.props.name;
+        if (r.cand.props.height_source === "default" && o.props.height_source !== "default") {
+          r.cand.props.height = o.props.height;
+          r.cand.props.height_source = "outline";
+          r.top = o.props.height;                       // the clip basis moved with it
+        }
+      }
+      let minTop = Infinity;
+      for (const r of matched) if (r.top < minTop) minTop = r.top;
+      if (minBase > GROUND_EPS) clipH = minBase;        // podium under floating parts
+      else if (outlineArea > 0 && partArea / outlineArea < PART_COVER) clipH = minTop;
+      else continue;                                   // parts truly replace the outline
+    }
+    // A kept outline is clipped to where its parts begin (or under the shortest one) so
+    // it can never hide them. height_source records the clip — the inspector must not
+    // report a clipped height as surveyed.
+    if (clipH != null) {
+      // An outline can be RAISED ITSELF: the Daewoo hotel complex tags `building:min_level`
+      // on the outlines as well as the parts, so both start at 3 m. When the clip lands at
+      // or below the outline's own base it encloses no volume, and emitting it would add a
+      // zero-thickness slab that draws nothing. Drop it — the parts already describe
+      // everything from that height upward.
+      if (clipH <= (o.props.base || 0) + GROUND_EPS) continue;
+      if (o.props.height > clipH) {
+        o.props.height = clipH;
+        o.props.height_source = "part_clip";
+      }
+    }
+    features.push({ type: "Feature", geometry: o.geometry, properties: o.props });
+  }
+  // the parts themselves, now carrying anything inherited from their outline
+  for (const r of parts)
+    features.push({ type: "Feature", geometry: r.cand.geometry, properties: r.cand.props });
   return { type: "FeatureCollection", features };
 }
 

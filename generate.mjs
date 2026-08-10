@@ -28,6 +28,13 @@ try {
   // every way's nodes.
   const query = `[bbox:${bbox}];(` +
     `way["highway"];way["building"];relation["building"];` +
+    // Simple 3D Buildings: `building:part` is a SEPARATE OSM key — a standalone part
+    // carries no `building=*` tag at all, so ["building"] misses every one of them. Then
+    // build.mjs's S3DB rule sees no parts, never suppresses or clips an outline, and the
+    // detailed 3D geometry silently doesn't exist on this path. server.mjs's ctxArea has
+    // always pulled these; generate.mjs did not, so the one-shot fetch and the editor
+    // disagreed about what a building is. Keep the two queries in step.
+    `way["building:part"];relation["building:part"];` +
     `way["natural"~"water|wood|scrub|grassland|heath"];relation["natural"~"water|wood|scrub|grassland|heath"];` +
     `way["water"];way["waterway"="riverbank"];` +
     `way["landuse"~"reservoir|basin|grass|forest|meadow|village_green|cemetery|recreation_ground|orchard|farmland"];relation["landuse"~"reservoir|basin|grass|forest|meadow|cemetery|recreation_ground|orchard|farmland"];` +
